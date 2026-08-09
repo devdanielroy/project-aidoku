@@ -1,0 +1,16 @@
+# Go
+/pipeline/bin/
+*.test
+*.out
+
+# Env / secrets
+.env
+.env.*
+*.local
+
+# OS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
