@@ -1,4 +1,8 @@
-# Aidoku (架読)
+# Aidoku (愛読)
+
+> **Working name.** "Aidoku" is already used by an existing manga-reading
+> iOS app, so this name will change before any public release. Treat it as
+> a placeholder throughout the codebase for now.
 
 A language-learning app that teaches through literature: users read small,
 sentence-safe chunks of real public-domain books unassisted, answer three

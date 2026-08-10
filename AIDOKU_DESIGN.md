@@ -1,4 +1,4 @@
-# Aidoku (架読) — Design Plan v0.1
+# Aidoku (愛読) — Design Plan v0.1
 
 ## 1. Concept
 
