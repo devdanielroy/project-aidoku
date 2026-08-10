@@ -1,6 +1,8 @@
 package segment
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"aidoku/pipeline/internal/types"
@@ -115,6 +117,25 @@ func TestSegment(t *testing.T) {
 				"Second sentence.",
 			},
 		},
+		{
+			name: "Dracula by Bram Stoker excerpt",
+			text: `“Count Dracula?” He bowed in a courtly way as he replied:—
+“I am Dracula; and I bid you welcome, Mr. Harker, to my house. Come in; the night air is chill, and you must need to eat and rest.” As he was speaking, he put the lamp on a bracket on the wall, and stepping out, took my luggage; he had carried it in before I could forestall him. I protested but he insisted:—
+“Nay, sir, you are my guest. It is late, and my people are not available. Let me see to your comfort myself.” He insisted on carrying my traps along the passage, and then up a great winding stair, and along another great passage, on whose stone floor our steps rang heavily. At the end of this he threw open a heavy door, and I rejoiced to see within a well-lit room in which a table was spread for supper, and on whose mighty hearth a great fire of logs, freshly replenished, flamed and flared.`,
+			want: []string{
+				`“Count Dracula?”`,
+				`He bowed in a courtly way as he replied:—
+“I am Dracula; and I bid you welcome, Mr. Harker, to my house.`,
+				`Come in; the night air is chill, and you must need to eat and rest.”`,
+				`As he was speaking, he put the lamp on a bracket on the wall, and stepping out, took my luggage; he had carried it in before I could forestall him.`,
+				`I protested but he insisted:—
+“Nay, sir, you are my guest.`,
+				`It is late, and my people are not available.`,
+				`Let me see to your comfort myself.”`,
+				`He insisted on carrying my traps along the passage, and then up a great winding stair, and along another great passage, on whose stone floor our steps rang heavily.`,
+				`At the end of this he threw open a heavy door, and I rejoiced to see within a well-lit room in which a table was spread for supper, and on whose mighty hearth a great fire of logs, freshly replenished, flamed and flared.`,
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -126,7 +147,7 @@ func TestSegment(t *testing.T) {
 				gotText[i] = s.Text
 			}
 			if !equalStrings(gotText, tc.want) {
-				t.Fatalf("Segment(%q) = %q, want %q", tc.text, gotText, tc.want)
+				t.Fatalf("Segment mismatch:\n%s", diffSentences(tc.want, gotText))
 			}
 
 			for i, s := range got {
@@ -164,6 +185,41 @@ func TestSegmentTypeMatchesSharedType(t *testing.T) {
 	// Compile-time check that Segment's element type is exactly the shared
 	// types.SentenceInput used by Stage B, not a lookalike local type.
 	var _ []types.SentenceInput = Segment("A sentence.")
+}
+
+// diffSentences renders a side-by-side-by-index listing of the wanted and
+// actual sentences, so a failing test shows exactly where they diverge
+// instead of dumping two long %q-quoted slices to compare by eye.
+func diffSentences(want, got []string) string {
+	var b strings.Builder
+	n := max(len(want), len(got))
+	fmt.Fprintf(&b, "  (want %d sentence(s), got %d)\n", len(want), len(got))
+	for i := range n {
+		w, hasW := "", i < len(want)
+		if i < len(want) {
+			w = want[i]
+		}
+		g, hasG := "", i < len(got)
+		if i < len(got) {
+			g = got[i]
+		}
+		marker := "=="
+		if !hasW || !hasG || w != g {
+			marker = "!="
+		}
+		fmt.Fprintf(&b, "[%d] %s\n", i, marker)
+		if hasW {
+			fmt.Fprintf(&b, "    want: %q\n", w)
+		} else {
+			fmt.Fprintf(&b, "    want: <none>\n")
+		}
+		if hasG {
+			fmt.Fprintf(&b, "    got:  %q\n", g)
+		} else {
+			fmt.Fprintf(&b, "    got:  <none>\n")
+		}
+	}
+	return b.String()
 }
 
 func equalStrings(a, b []string) bool {
