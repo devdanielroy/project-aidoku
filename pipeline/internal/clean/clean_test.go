@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"aidoku/pipeline/internal/catalog"
 )
 
 func TestClean_StripsHeaderAndFooter(t *testing.T) {
@@ -297,10 +295,14 @@ func TestClean_RealPrideAndPrejudice(t *testing.T) {
 }
 
 // TestTrim_RealPrideAndPrejudice runs Clean then Trim on the real Pride
-// and Prejudice text, using the actual anchors from pipeline/books.txt —
-// both to prove Trim works end to end against real (not hand-crafted)
-// content, and as a regression check that books.txt's anchors still
-// match if either the book text or Clean's normalization ever changes.
+// and Prejudice text (testdata/pg1342.txt) — a standing regression
+// fixture for this package, independent of whatever pipeline/books.txt's
+// live catalog currently contains (it once held this exact book's entry,
+// before being swapped for a shorter/cheaper PoC book — see books.txt) —
+// to prove Trim works end to end against real, not hand-crafted, content.
+// The anchors below are hardcoded rather than read from books.txt for
+// exactly that reason: this test's job is exercising Trim against a
+// known-real fixture, not asserting what the catalog currently lists.
 func TestTrim_RealPrideAndPrejudice(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "pg1342.txt"))
 	if err != nil {
@@ -311,29 +313,20 @@ func TestTrim_RealPrideAndPrejudice(t *testing.T) {
 		t.Fatalf("Clean: %v", err)
 	}
 
-	entries, err := catalog.ParseFile(filepath.Join("..", "..", "books.txt"))
-	if err != nil {
-		t.Fatalf("catalog.ParseFile: %v", err)
-	}
-	var entry *catalog.Entry
-	for i := range entries {
-		if entries[i].GutenbergID == 1342 {
-			entry = &entries[i]
-		}
-	}
-	if entry == nil {
-		t.Fatal("books.txt has no entry for Gutenberg ID 1342 (Pride and Prejudice)")
-	}
+	const (
+		firstLine = "It is a truth universally acknowledged, that a single man in possession of a good fortune must be in want of a wife."
+		lastLine  = "Darcy, as well as Elizabeth, really loved them; and they were both ever sensible of the warmest gratitude towards the persons who, by bringing her into Derbyshire, had been the means of uniting them."
+	)
 
-	got, err := Trim(cleaned, entry.FirstLine, entry.LastLine)
+	got, err := Trim(cleaned, firstLine, lastLine)
 	if err != nil {
 		t.Fatalf("Trim: %v", err)
 	}
 
-	if !strings.HasPrefix(got, entry.FirstLine) {
+	if !strings.HasPrefix(got, firstLine) {
 		t.Errorf("Trim() output doesn't start with the first-line anchor: %q", got[:min(80, len(got))])
 	}
-	if !strings.HasSuffix(got, entry.LastLine) {
+	if !strings.HasSuffix(got, lastLine) {
 		t.Errorf("Trim() output doesn't end with the last-line anchor: %q", got[max(0, len(got)-80):])
 	}
 

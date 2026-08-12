@@ -18,6 +18,11 @@ import (
 
 // Entry is one book in the catalog.
 type Entry struct {
+	// Title and Author are exactly what's shown to the user — the
+	// catalog's own record of them, not derived from Gutenberg metadata
+	// or the source text itself.
+	Title  string
+	Author string
 	// GutenbergID is the book's Project Gutenberg ebook number, extracted
 	// from SourceURL — the stable identifier for this specific
 	// transcription/edition, unlike the URL itself (which Gutenberg
@@ -28,6 +33,10 @@ type Entry struct {
 	SourceURL   string
 	FirstLine   string
 	LastLine    string
+	// Level is this book's reading-comprehension level, from the
+	// catalog's "Level=" line — assigned manually per book, never
+	// derived by the pipeline. See ReadingLevel's doc comment.
+	Level ReadingLevel
 }
 
 // gutenbergIDPattern matches the book ID out of the handful of URL shapes
@@ -53,9 +62,9 @@ func ParseFile(path string) ([]Entry, error) {
 }
 
 // Parse reads a catalog from r. See the package doc / books.txt's own
-// header for the format: blank-line-separated blocks of exactly 3 lines
-// each (URL, first line, last line), with "#"-prefixed comment lines
-// ignored wherever they appear.
+// header for the format: blank-line-separated blocks of exactly 6 lines
+// each (title, author, URL, first line, last line, "Level=X"), with
+// "#"-prefixed comment lines ignored wherever they appear.
 func Parse(r io.Reader) ([]Entry, error) {
 	var block []string
 	blockStartLine := 0
@@ -65,10 +74,10 @@ func Parse(r io.Reader) ([]Entry, error) {
 		if len(block) == 0 {
 			return nil
 		}
-		if len(block) != 3 {
-			return fmt.Errorf("entry starting at line %d has %d line(s), want exactly 3 (URL, first line, last line)", blockStartLine, len(block))
+		if len(block) != 6 {
+			return fmt.Errorf("entry starting at line %d has %d line(s), want exactly 6 (title, author, URL, first line, last line, Level=X)", blockStartLine, len(block))
 		}
-		entry, err := newEntry(block[0], block[1], block[2])
+		entry, err := newEntry(block[0], block[1], block[2], block[3], block[4], block[5])
 		if err != nil {
 			return fmt.Errorf("entry starting at line %d: %w", blockStartLine, err)
 		}
@@ -107,15 +116,53 @@ func Parse(r io.Reader) ([]Entry, error) {
 	return entries, nil
 }
 
-func newEntry(url, firstLine, lastLine string) (Entry, error) {
+func newEntry(title, author, url, firstLine, lastLine, levelLine string) (Entry, error) {
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
-		return Entry{}, fmt.Errorf("first line of entry doesn't look like a URL: %q", url)
+		return Entry{}, fmt.Errorf("third line of entry doesn't look like a URL: %q", url)
 	}
 	id, err := gutenbergID(url)
 	if err != nil {
 		return Entry{}, err
 	}
-	return Entry{GutenbergID: id, SourceURL: url, FirstLine: firstLine, LastLine: lastLine}, nil
+	level, err := parseLevel(levelLine)
+	if err != nil {
+		return Entry{}, err
+	}
+	return Entry{
+		Title:       title,
+		Author:      author,
+		GutenbergID: id,
+		SourceURL:   url,
+		FirstLine:   firstLine,
+		LastLine:    lastLine,
+		Level:       level,
+	}, nil
+}
+
+// levelLinePattern matches the catalog's sixth (final) entry line, e.g.
+// "Level=10".
+var levelLinePattern = regexp.MustCompile(`^Level=(\d+)$`)
+
+// parseLevel parses a catalog entry's sixth line into a ReadingLevel,
+// rejecting anything that isn't exactly "Level=X" with X in [1,10] — same
+// fail-loud-on-malformed-input philosophy as gutenbergID.
+func parseLevel(line string) (ReadingLevel, error) {
+	m := levelLinePattern.FindStringSubmatch(line)
+	if m == nil {
+		return 0, fmt.Errorf("sixth line of entry doesn't look like a reading level: %q (want \"Level=X\", X from 1 to 10)", line)
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil {
+		// Unreachable in practice - the pattern only captures digits -
+		// but strconv.Atoi still returns an error type, so handle it
+		// rather than ignore it.
+		return 0, fmt.Errorf("reading level %q is not a valid number: %w", m[1], err)
+	}
+	level := ReadingLevel(n)
+	if !level.Valid() {
+		return 0, fmt.Errorf("reading level %d out of range, want 1-10 inclusive", n)
+	}
+	return level, nil
 }
 
 func gutenbergID(url string) (int, error) {

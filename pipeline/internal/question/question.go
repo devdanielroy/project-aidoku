@@ -1,6 +1,7 @@
 // Package question implements the question-generation pipeline stage: one
-// vocab, one grammar, and one comprehension question per chunk, per
-// AIDOKU_DESIGN.md §3 step 5 / §4. It follows the same general pattern as
+// vocab, one grammar, and one comprehension question per chunk — one of
+// §3's Claude API Invocation Steps ("Generate questions") / §4. It
+// follows the same general pattern as
 // Stage B chunk grouping (§7b) — structured JSON request/response,
 // strict validation, retry on failure — with one deliberate difference:
 // there is no rule-based fallback here.
@@ -168,7 +169,7 @@ For "comprehension":
 - "explanation" is 1-3 Japanese sentences confirming what happened.
 
 Rules that apply to all three:
-- "options" is always exactly %d entries, in Japanese, all distinct and all plausible — no throwaway wrong answers. "answer_index" is the 0-based index of the correct option.
+- "options" is always exactly %d entries, in Japanese, all distinct and all plausible — no throwaway wrong answers. Always list the correct option first, as options[0] ("answer_index": 0) — the client app randomizes the displayed order before showing it to the reader, so you don't need to vary or think about position.
 - Do not restate large portions of the passage inside any prompt — the passage itself is always visible to the reader alongside the question.
 
 Output ONLY a single JSON object with this exact shape, and nothing else — no prose, no explanation, no markdown code fences:
@@ -252,6 +253,13 @@ func validateOne(chunk types.Chunk, t types.QuestionType, raw rawQuestion) (type
 		}
 		seen[trimmed] = true
 	}
+	// systemPrompt asks the model to always put the correct answer at
+	// options[0], so it only has to write distractors — not also track
+	// where it hid the right one — and the client is expected to
+	// randomize display order before showing options to the user. We
+	// still accept any in-range index here rather than enforcing 0: the
+	// contract that actually matters is "answer_index correctly points
+	// to the correct option," not its position.
 	if raw.AnswerIndex < 0 || raw.AnswerIndex >= len(raw.Options) {
 		return types.Question{}, fmt.Errorf("answer_index %d out of range [0,%d)", raw.AnswerIndex, len(raw.Options))
 	}

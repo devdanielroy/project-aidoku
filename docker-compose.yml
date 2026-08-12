@@ -1,0 +1,34 @@
+# Local development Postgres for Aidoku. Not for production use — no
+# backend/storage-layer code exists yet (see README Milestones); this is
+# purely so pipeline output (chunks, questions, breakdowns) survives
+# between dev sessions instead of living only in memory or throwaway
+# JSON files.
+#
+# `docker compose up -d` on first run creates the "aidoku_pgdata" named
+# volume and applies db/schema.sql automatically (Postgres only runs
+# files under docker-entrypoint-initdb.d against a *fresh* data
+# directory). Every run after that reuses the same volume, so data
+# persists across `docker compose down` / restarts / reboots. Only
+# `docker compose down -v` (or deleting the volume explicitly) discards
+# it — normal `down`/`up` does not.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aidoku}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aidoku_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-aidoku}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - aidoku_pgdata:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aidoku} -d ${POSTGRES_DB:-aidoku}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  aidoku_pgdata:

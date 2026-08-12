@@ -29,16 +29,18 @@ All content is **pre-generated, not generated on-the-fly**. One-time processing 
 **Pipeline stages:**
 1. **Ingest** — pull a public domain text (source: Project Gutenberg for English; unambiguous copyright status).
 2. **Clean** — strip Gutenberg boilerplate/headers, normalize whitespace/encoding, and trim to just the actual novel content using catalog-supplied first/last-line anchors (see §7d, §7e).
-3. **Segment** (Stage A) — deterministic sentence segmentation, no LLM involved; see §3a.
-4. **Group into chunks** (Stage B) — LLM groups sentences into ~240±60 char chunks; see §3a.
-5. **Grade** — tag each book (and possibly each chunk) with a rough difficulty level, so users can self-select sensibly. Even without formal level testing, a per-book level tag is needed for the "pick by level" flow to mean anything.
-6. **Generate questions** (AI, offline, per chunk):
-   - Vocab question — pick a keyword/high-value word from the chunk, generate a question testing it.
-   - Grammar question — identify a grammar pattern present in the chunk, generate a question testing it.
-   - Comprehension question — generate a question testing whether the chunk's content/meaning was understood.
-7. **Generate breakdown** (AI, offline, per chunk) — full explanation of the passage: vocab, grammar, meaning, in Japanese.
-8. **QA pass** — manual review before publishing a book. This is the step that makes "AI-generated" defensible: nothing reaches a paying user unreviewed, at least at v1 scale.
-9. **Publish** — chunk + 3 questions + breakdown become an immutable served unit, keyed to (book_id, chunk_index).
+3. **Segment** (Stage A) — deterministic sentence segmentation; see §3a.
+4. **Claude API Invocation Steps** Send sentences to Claude API and request the following:
+    1. **Group into chunks** — Group sentences into ~240±60 char chunks; see §3a.
+    2. **Generate questions** (AI, offline, per chunk):
+        - Vocab question — pick a keyword/high-value word from the chunk, generate a question testing it.
+        - Grammar question — identify a grammar pattern present in the chunk, generate a question testing it.
+        - Comprehension question — generate a question testing whether the chunk's content/meaning was understood.
+    3. **Generate breakdown** full explanation of the passage: vocab, grammar, meaning, in Japanese.
+5. **QA pass** — manual review before publishing a book. This is the step that makes "AI-generated" defensible: nothing reaches a paying user unreviewed, at least at v1 scale.
+6. **Publish** — chunk + 3 questions + breakdown become an immutable served unit, keyed to (book_id, chunk_index).
+
+Book grading (assigning each book a reading-comprehension level, 1–10, see the README's Reading Levels table) is decided by Daniel by weighing vocabulary difficulty, sentence complexity, and how it maps to TOEIC/CEFR. The level is recorded directly in the catalog as the book's `Level=` line. See §7e.
 
 All users reading the same book see the same chunks, questions, and breakdowns. Zero marginal inference cost per learner after the pipeline runs once.
 
@@ -49,16 +51,15 @@ All users reading the same book see the same chunks, questions, and breakdowns. 
 | 1 | Ingest | `internal/ingest` | ✅ built, run for real against the live Gutenberg source |
 | 2 | Clean (+ Trim) | `internal/clean`, `internal/catalog` | ✅ built, run for real — see §7d, §7e |
 | 3 | Segment (Stage A) | `internal/segment` | ✅ built, tested, run for real via `cmd/ingest` — see §7d |
-| 4 | Group into chunks (Stage B) | `internal/chunk` | ✅ built & tested against fakes only — never called against the real Claude API or a real book |
-| 5 | Grade | — | ❌ not built |
-| 6 | Generate questions | `internal/question` | ✅ built & tested against fakes only — never called against the real Claude API |
-| 7 | Generate breakdown | — | ❌ not built |
-| 8 | QA pass | — | manual process, not code |
-| 9 | Publish | — | ❌ not built — no storage layer exists yet |
+| 4.1 | Group into chunks (Stage B) | `internal/chunk` | ✅ built, tested against fakes, and now run against the real Claude API (small test batch, not a full book yet) |
+| 4.2 | Generate questions | `internal/question` | ✅ built, tested against fakes, and now run against the real Claude API (small test batch, not a full book yet) |
+| 4.3 | Generate breakdown | `internal/breakdown` | ✅ built & tested against fakes — not yet called against the real Claude API |
+| 5 | QA pass | — | manual process, not code |
+| 6 | Publish | — | ❌ not built — no storage layer exists yet |
 
 ## 3a. Chunking Design (Book Processor)
 
-*Design detail for pipeline stages 3 (Segment) and 4 (Group into chunks) above.*
+*Design detail for pipeline stage 3 (Segment) and stage 4.1 (Group into chunks) above.*
 
 **Hard rule: a sentence must never be split across two chunks.** Chunk length target (~240 chars ±60 for English) is a soft target only — actual chunk length varies to respect sentence boundaries. A single long sentence becomes its own chunk even if it blows past the target range.
 
@@ -79,17 +80,19 @@ All users reading the same book see the same chunks, questions, and breakdowns. 
 - Chunks are reconstructed by concatenating sentences per group — guaranteed byte-identical to source text since Stage A output was untouched.
 - **Dialogue-turn atomicity (open question — not yet a hard rule).** A single dialogue turn — consecutive sentences spoken by one character inside one unbroken quotation, e.g. Dracula's "I am Dracula...to my house." followed immediately by "Come in...rest." — is multiple *sentences* (Stage A correctly splits each one; that's unambiguous grammar), but grouping them into the *same chunk* wherever the length budget allows is a Stage B preference, so a reader isn't handed an uninterrupted quote sliced mid-flow between two chunk boundaries. Unlike the sentence rule in §3a (hard, no exceptions), this can't be an unconditional hard rule: a single character's speech can run to many sentences and far exceed even the oversized-chunk ceiling, so treating "the whole quote" as one unsplittable unit the way a sentence is unsplittable isn't tenable. Needs a concrete policy before Stage B implementation — options to weigh: (a) soft preference only, penalized in the grouping prompt/heuristic but overridable once length forces a cut; (b) a raised ceiling specifically for in-progress dialogue turns before allowing a split; (c) explicit permission to cut between sentences of a long dialogue turn once it exceeds some threshold, same QA-flagging treatment as an oversized single sentence. Decide when Stage B is designed — tracked in §7.
 
-**Book-length handling:** process in overlapping windows (not the whole book in one pass) to respect context limits — e.g. ~3,000-character windows with overlap, reconciling boundary decisions near window edges using the pass that has fuller context. Chapter/section breaks from the source are always forced hard breaks, regardless of Stage B's grouping.
+**Book-length handling:** process in windows (not the whole book in one pass) to respect context limits — `chunk.SplitIntoWindows` (§7h) implements this now, targeting ~3,000 characters per window. Two refinements described here aren't implemented yet: window **overlap**, with boundary decisions near window edges reconciled using the pass that has fuller context (current windows are plain, non-overlapping cuts — see that function's own doc comment for why this is an acceptable v0 gap); and forcing chapter/section breaks from the source as hard breaks regardless of Stage B's grouping (chapter detection itself is still undesigned — see §7).
 
 **QA flagging (not auto-splitting):** if a chunk exceeds a defined ceiling (e.g. 500 characters) due to a single long sentence or run of sentences, flag for manual review rather than silently allowing it — gives visibility into books (e.g. Victorian-era long-sentence prose) that may produce a lot of oversized chunks.
 
 ## 4. Data Model (rough sketch)
 
-- **Book**: id, title, author, source_url (Gutenberg), level_tag, language, status (processing/published)
+- **Book**: id, title, author, source_url (Gutenberg), level (1–10, `catalog.ReadingLevel`, assigned manually — see §7e), language, status (processing/published)
 - **Chunk**: id, book_id, index (ordering), text, char_count
 - **Question**: id, chunk_id, type (vocab/grammar/comprehension), prompt, options/answer, explanation
 - **Breakdown**: id, chunk_id, content (Japanese explanation text)
 - **UserProgress**: user_id, book_id, current_chunk_index, answers_history, streak/gamification state
+
+See `db/schema.sql` for the actual Postgres DDL (§6) — this list stays a rough sketch on purpose; the schema file is the source of truth, so the two aren't kept in lockstep line-for-line.
 
 ## 5. Gamification (light touch, TBD in detail)
 
@@ -104,12 +107,12 @@ All users reading the same book see the same chunks, questions, and breakdowns. 
 - **Backend**: Go.
 - **Content pipeline**: separate offline batch process, Go (`pipeline/` module) — decided and built out over §7a–§7e, not just the backend's language by coincidence but a deliberate choice made once Stage B was first implemented.
 - **AI generation**: Claude API, offline/batch, not in the user-facing request path.
-- **Storage**: TBD — needs a DB for books/chunks/questions/breakdowns (relational fits well given the structure) plus user progress.
+- **Storage**: Postgres. The data model (§4) is a small number of fixed-shape, foreign-keyed relations — Book → Chunk → Question, Chunk → Breakdown (1:1), User → UserProgress — with real integrity constraints worth enforcing at the DB layer (e.g. exactly one question of each type per chunk), not the variable/nested shape a document store like MongoDB is suited to. `db/schema.sql` is the actual DDL, written to by `pipeline/internal/db` — see §7f. Local development runs it via `docker compose up -d` (`docker-compose.yml`), with a named volume so pipeline output (chunks, questions, breakdowns) survives between dev sessions instead of living only in memory. No migration tool wired up yet — a single schema file is enough until there's real backend/storage-layer code driving changes to it.
 
 ## 7. Open Questions / Decisions Needed
 
 - **Corpus selection**: which specific books to launch with? Needs to be genuinely appealing to a Japanese English-learner (not just "public domain and easy" — has to feel worth reading), while being tractable in reading level.
-- **Level tagging methodology**: how do we grade a book's difficulty without formal testing infrastructure? (Lexile-style heuristics? Vocabulary frequency analysis? Manual judgment?)
+- ~~**Level tagging methodology**~~ — resolved: manual judgment per book, done before the pipeline runs — not a heuristic, not a pipeline stage. See §7e.
 - **Chunk boundary algorithm**: exact rules for where a break is "logical" (sentence-final punctuation as primary rule, clause boundaries as fallback, hard character-count ceiling as last resort).
 - **Explanation language**: confirm Japanese-language breakdowns for v1 (English learner, Japanese L1) — this also affects UI copy/marketing language decisions.
 - **Monetization**: subscription vs. one-time per-book purchase vs. freemium (first book free, pay per additional book)?
@@ -138,7 +141,7 @@ Implemented in `pipeline/internal/chunk`, using shared types from `pipeline/inte
 - Output is validated as a complete, ordered, non-overlapping partition before being trusted. Invalid output triggers a retry, then a deterministic greedy-grouping fallback (`GreedyGroup`).
 - Target chunk length ~240 chars ±60 (English), soft target only — a sentence is never split across chunks, so actual length varies.
 - Oversized chunks (single long sentence or run of sentences) are flagged for manual QA review, not auto-split.
-- Book-length text is processed in overlapping windows (e.g. ~3,000 chars with overlap) to fit context limits; chapter/section breaks from source are always forced hard breaks regardless of LLM grouping (not yet implemented — chapter detection is deferred to this stage, see §7).
+- Book-length text is processed in ~3,000-char windows (`chunk.SplitIntoWindows`, §7h) to fit context limits — plain, non-overlapping cuts for now, not yet the overlap-with-reconciliation design described in §3a. Chapter/section breaks from source are always forced hard breaks regardless of LLM grouping (not yet implemented — chapter detection is deferred to this stage, see §7).
 
 **Types** (`types.SentenceInput`, `types.ChunkGroup`, `types.ChunkGroupingResponse` — see `internal/types`):
 ```go
@@ -191,7 +194,7 @@ func ValidatePartition(sentences []types.SentenceInput, resp types.ChunkGrouping
 
 **`BuildChunks`** (also in `internal/chunk`): the missing link between Stage A and Stage B's output — reconstructs each chunk's actual `types.Chunk` (text + char count) by concatenating its sentences per `ChunkGroup`, guaranteed byte-identical to the source since Stage A's sentence text was never rewritten. Used by §7c's question generation, which needs real chunk text, not just grouping indices.
 
-**Not yet designed:** breakdown generation call, book-level grading/leveling step. Same general request/response/validation pattern should extend to these.
+Breakdown generation (stage 4.3) extends this same general request/response/validation pattern — see §7g. (Book-level grading is *not* part of that pattern — see §7e: it's a manual catalog field decided before the pipeline runs, not a pipeline stage or an LLM call.)
 
 ## 7c. Implementation Handoff — Question Generation (Go)
 
@@ -218,18 +221,58 @@ Implemented in `pipeline/internal/ingest` and `pipeline/internal/clean` — pipe
 
 ## 7e. Implementation Handoff — Book Catalog & Trim (Go)
 
-Front/back matter (§7d's scope limit) turned out not to be worth solving generically — instead, a human supplies two anchor lines per book, once, at catalog time. This is a natural extension of the QA pass already required before publishing (§3 step 8): picking two lines is trivial compared to the rest of that review, and it sidesteps an open-ended detection problem entirely by not trying to classify front/back matter at all, just anchoring on exact text a human already identified.
+Front/back matter (§7d's scope limit) turned out not to be worth solving generically — instead, a human supplies two anchor lines per book, once, at catalog time. This is a natural extension of the QA pass already required before publishing (§3 stage 5): picking two lines is trivial compared to the rest of that review, and it sidesteps an open-ended detection problem entirely by not trying to classify front/back matter at all, just anchoring on exact text a human already identified.
 
-**Catalog file** (`pipeline/books.txt`, parsed by `pipeline/internal/catalog`): a plain text file, one entry per book. Each entry is exactly 3 lines — Gutenberg URL, first line of the actual novel content, last line of the actual novel content — separated from other entries by a blank line; an optional `# comment` line (e.g. the book's title) may precede an entry for human readability and is ignored by the parser. See the file's own header comment for the authoritative format spec.
+**Catalog file** (`pipeline/books.txt`, parsed by `pipeline/internal/catalog`): a plain text file, one entry per book. Each entry is exactly 6 lines — title, author, Gutenberg URL (the plain-text edition specifically; `Clean` depends on Gutenberg's own START/END markers, which only that edition has), first line of the actual novel content, last line of the actual novel content, `Level=X` — separated from other entries by a blank line; a `# comment` line is ignored by the parser wherever it appears (a section header, or disabling an entry — no longer needed per-entry now that title/author are real fields). See the file's own header comment, or the README's "Adding a Book to the Catalog" section, for the full spec.
 
+- `catalog.Entry.Title` and `.Author` are shown to the user as-is — the catalog's own record of them, not derived from Gutenberg metadata or the source text.
 - `catalog.Entry` also carries a `GutenbergID`, extracted from the URL (handles the `/cache/epub/{id}/`, `/files/{id}/`, and `/ebooks/{id}` URL shapes Gutenberg serves plain text under). This is the stable identifier for a book — unlike the URL itself, which Gutenberg serves in several equivalent forms across different paths and mirrors, so the same book fetched two different ways wouldn't naturally dedup on URL alone. Earmarked as the future key for skipping books a storage layer already has, and a natural fit for the `Book` entity's `id` in §4 once that layer exists.
-- Malformed entries (not exactly 3 lines, a first line that doesn't look like a URL, a URL with no extractable Gutenberg ID) are parse errors, not skipped/guessed.
+- `catalog.Entry.Level` (type `catalog.ReadingLevel`, an `int` enum `LevelInitiate`=1 through `LevelScholar`=10, matching the README's Reading Levels table) is parsed from the entry's sixth line. Book grading is deliberately **not** one of §3's numbered pipeline stages — a human decides the level per book, before the pipeline is even run, and `catalog.Parse` just validates and carries whatever was written into the catalog; there is no book-grading code anywhere else.
+- Malformed entries (not exactly 6 lines, a third line that doesn't look like a URL, a URL with no extractable Gutenberg ID, a sixth line that isn't exactly `Level=X` with X in [1,10]) are parse errors, not skipped/guessed.
+- `db.NewBookFromEntry` (§7f) converts a `catalog.Entry` straight into a `db.Book` for persistence — every field a `Book` needs now has a home in the catalog.
 
 **Trim** (`clean.Trim(text, firstLine, lastLine)`): slices Clean's output down to the span between the two anchors, inclusive — discarding everything outside it, whatever it is or whatever it's called. Both anchors must match **exactly once** in the text; zero or multiple matches is an error (wrong edition, a typo, or an anchor that isn't specific enough to be a safe cut point), not a guess. Kept as a separate function from `Clean` rather than folded into it: stripping Gutenberg's own wrapper is fully automatic and identical for every Gutenberg book, while trimming to the real content bounds is book-specific and needs the human-supplied anchor — deliberately not conflating a generic step with a per-book one.
 
 **Orchestration** (`pipeline.PrepareBook`, in `pipeline/internal/pipeline`): `Fetch → Clean → Trim` for one `catalog.Entry`, returning the final novel-only text. `cmd/ingest` is the runnable entrypoint — reads `books.txt`, calls `PrepareBook` for every entry, then also runs Stage A (`segment.Segment`) on the result and writes two output files per book to `pipeline/books/` (gitignored — generated, not source): `{id}.txt` (the prepared novel text) and `{id}.sentences.txt` (its sentences, one per line, indexed with char counts, for human inspection — not a format anything downstream parses; Stage B takes `[]types.SentenceInput` directly, in memory). Continues past a single book's failure rather than aborting the whole run, but exits non-zero if anything failed. Stage B (LLM chunk grouping) and beyond are not run by this command.
 
 Run for real against the live catalog as part of this work (not just tested against fakes): `go run ./cmd/ingest` fetched the real Pride and Prejudice text over the network. Output contained the correct opening/closing lines with zero preface, colophon, or Gutenberg-wrapper content remaining, and — after the illustration-condensing, bare-illustration-removal, and paragraph-break fixes above — 5,939 correctly-bounded sentences with no prose glued to an illustration placeholder.
+
+## 7f. Implementation Handoff — Storage (Go)
+
+Implemented in `pipeline/internal/db`. Persists pipeline output — books, chunks, questions, and breakdowns — to the Postgres schema in `db/schema.sql` (§4/§6). Nothing in this package calls the Anthropic API; it's purely the write side for what earlier stages already produced.
+
+**`Store`** wraps a `conn` interface (`Exec`/`QueryRow`/`Begin`) rather than a concrete `*pgxpool.Pool` — same consumer-defined-interface-for-testability pattern as `llmCaller` in §7b/§7c. `pgx.Tx` satisfies `conn` too (its `Begin` opens a savepoint-based nested transaction), which is what makes the package's own tests possible without a fake: each test opens a real transaction against the local dev Postgres, wraps it in a `Store`, and rolls back at the end — so tests exercise real SQL (including the schema's CHECK/UNIQUE/FOREIGN KEY constraints) without leaving rows behind or needing a mock. Tests skip (not fail) if Postgres isn't reachable, so `go test ./...` doesn't require Docker to be running.
+
+**Write surface:**
+- `UpsertBook(ctx, Book) (id int, error)` — insert or update by `GutenbergID`. `Book` is its own type, not `catalog.Entry` (Language/Status have no catalog equivalent and default instead), but `NewBookFromEntry(catalog.Entry) Book` converts one directly now that the catalog carries title/author too (§7e).
+- `SaveChunk(ctx, bookID, types.Chunk, []types.Question) (id int, error)` — upserts the chunk and replaces its questions, atomically (one transaction; a chunk left with only some of its questions written is a state nothing downstream should see). Relies on the schema's constraints to reject malformed input (e.g. a vocab question with no highlight) rather than re-validating in Go — `questions` is expected to already be `question.ValidateQuestionSet`'s output.
+- `SaveBreakdown(ctx, chunkID, content string) error` — upserts by `chunk_id`. Called by breakdown generation (stage 4.3, §7g) once it has content to save.
+
+All three are upserts, not plain inserts — re-running a pipeline stage against the same book/chunk during development is expected and should overwrite, not fail on a unique-constraint violation.
+
+**Wired into `cmd/livetest`** (§ livetest is otherwise unrelated to real pipeline stages — see its own doc comment): after its three real API calls, it now saves the resulting book/chunk/questions/breakdown via this package, so results survive between runs instead of only ever living in stdout.
+
+## 7g. Implementation Handoff — Breakdown Generation (Go)
+
+Implemented in `pipeline/internal/breakdown`. Takes a `types.Chunk` (same as §7c) and produces its full Japanese breakdown: sentence structure, vocabulary, grammar, meaning/interpretation, and cultural/stylistic notes where genuinely relevant (§2 step 5). Same retry-then-error shape as §7c (`maxRetries`, no rule-based fallback — writing a good explanation isn't mechanical, same reasoning as question generation) and the same `llmCaller` consumer-defined-interface pattern as §7b/§7c/§7f.
+
+**Deliberately simpler than §7c's request/response shape.** Question generation's output is a fixed set of typed fields (type/prompt/options/answer_index/explanation/highlight) validated field-by-field. A breakdown is one free-form text blob — matching `db/schema.sql`'s `breakdown.content` column and the Flutter app's already-established `Breakdown{id, content}` model (`app/lib/models/breakdown.dart`) — so there's no JSON envelope on the wire at all: the model is asked to output the Japanese text directly, and `GenerateBreakdown` returns it as a plain `string`.
+
+**System prompt** matches the house style already validated in the Flutter mock content (`app/assets/mock/pride_and_prejudice.json`'s `breakdown.content` fields): Japanese section headers wrapped in 【】 (【文構造】 sentence structure, 【語彙】 vocabulary, 【文法】 grammar, 【意味】 meaning), blank-line-separated sections, exact English spans quoted from the chunk's text, `・` bullets for vocabulary lists. Includes one illustrative example (explicitly labeled as format-only) drawn from that same mock content. The prompt explicitly allows a chunk to skip sections that don't apply — a short, grammatically simple chunk doesn't need to manufacture a grammar note.
+
+**Validation is deliberately loose**, unlike §7c's field-by-field checks: non-empty, and contains at least one Japanese character (a cheap sanity check against an accidentally-English response — the design's hard requirement per §2 step 5). It does *not* check for the specific 【...】 section structure the prompt asks for, since which sections a chunk actually needs varies — a rigid structural check would reject legitimate, thinner breakdowns for simple chunks along with genuinely malformed ones. Anything that check misses is a QA-pass (stage 5) concern, not this package's.
+
+**Wired into `cmd/livetest`** alongside chunk grouping and question generation (§7f) — not yet run against the real Claude API (see the status table in §3).
+
+## 7h. Implementation Handoff — Full Pipeline Orchestration (Go)
+
+Implemented in `pipeline/cmd/process` — the "run it for real" counterpart to `cmd/ingest` (deliberately stops before Stage 4, §7d) and `cmd/livetest` (a throwaway smoke test on hand-typed sentences, not a real book, §7f). For each catalog entry: `pipeline.PrepareBook` → `segment.Segment` → `chunk.SplitIntoWindows` → Stage B per window → question + breakdown generation per resulting chunk → `internal/db`. Every book is saved with `Status` left at its default (`"processing"`) — this command never sets `"published"`; that transition is stage 5 (QA pass) and stage 6 (Publish), both still manual/not built, deliberately kept separate from bulk generation.
+
+**`chunk.SplitIntoWindows`** (`internal/chunk`, not `cmd/process` — reusable, tested logic belongs in `internal/`, matching this project's existing split between thin `cmd/` orchestration and tested packages) turns a whole book's sentence list into ~3,000-char windows, one per Stage B call — see §3a for what's implemented (plain, non-overlapping cuts) versus not yet (overlap + edge reconciliation, forced chapter breaks). Chunk indices from each window's grouping response restart at 0 (`chunk.ValidatePartition`'s own rule) — `groupAllChunks` renumbers them sequentially across windows before anything gets persisted, so the whole book ends up with one globally-ordered chunk sequence.
+
+**Per-chunk failure is non-fatal.** A chunk whose question or breakdown generation fails after retrying is logged to stderr and skipped — the rest of the book is still saved. Safe specifically because status stays `"processing"`: nothing partially generated can reach a real user without going through the still-manual QA/publish steps first (§7a's "nothing reaches a paying user unreviewed").
+
+**`-dry-run`** runs every free stage — fetch through windowing — for real (no Claude API calls, no Postgres writes) and prints the real window/chunk counts plus a rough, character-count-based cost estimate (`printCostEstimate`, clearly labeled as a ballpark, not a token-level measurement). Run against the real catalog as part of this work: The Vampyre (46,782 chars, 211 sentences) splits into 17 windows and an estimated ~195 chunks — ~407 real API calls, roughly $2.47 at `claude-sonnet-5` intro pricing. Meant to be checked before committing to a real run, the same way `cmd/livetest`'s cost was estimated before its first real run (see the "only the user launches anything that invokes the Claude API" rule this project works under).
 
 ## 8. Suggested Next Step
 
