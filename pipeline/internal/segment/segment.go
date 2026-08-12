@@ -12,6 +12,17 @@
 // sentence because there's no terminal punctuation inside them to begin
 // with — commas don't count, and a lowercase word ("she") immediately after
 // a quote-enclosed '!' or '?' is not treated as a new sentence start.
+//
+// A paragraph break (two or more consecutive newlines) always forces a
+// boundary too, regardless of terminal punctuation. This matters for text
+// with no punctuation of its own at a paragraph's end — a Project
+// Gutenberg "[Illustration: ...]" placeholder (see the clean package) is
+// the concrete case this exists for: without a forced break, it has
+// nothing to stop it silently gluing onto whatever real sentence follows
+// it. It's also just correct in general — a sentence never legitimately
+// spans a paragraph break — so normal multi-sentence prose (which almost
+// always ends paragraphs with real terminal punctuation anyway) is
+// unaffected.
 package segment
 
 import (
@@ -57,6 +68,23 @@ func Segment(text string) []types.SentenceInput {
 
 	for i < n {
 		c := runes[i]
+
+		if c == '\n' {
+			j := i
+			for j < n && runes[j] == '\n' {
+				j++
+			}
+			if j-i >= 2 {
+				// Paragraph break - forced boundary regardless of
+				// punctuation. A no-op if the preceding sentence already
+				// closed normally (start == i already, nothing to emit).
+				emit(i)
+				start = j
+			}
+			i = j
+			continue
+		}
+
 		if c != '.' && c != '!' && c != '?' {
 			i++
 			continue

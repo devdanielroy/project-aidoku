@@ -13,17 +13,36 @@ See [AIDOKU_DESIGN.md](./AIDOKU_DESIGN.md) for the full design plan.
 
 ## Layout
 
-- [`pipeline/`](./pipeline) — offline Go module that turns a raw public-domain
-  text into published chunks, questions, and breakdowns. Currently
-  implements Stage A (deterministic sentence segmentation); Stage B (LLM
-  chunk grouping) and later stages (grading, question generation, breakdown
-  generation) are next.
+- [`pipeline/`](./pipeline) — offline Go module implementing the content
+  pipeline: ingest, clean (+ book catalog, trim), sentence segmentation,
+  LLM chunk grouping, question generation. See
+  [AIDOKU_DESIGN.md §3](./AIDOKU_DESIGN.md) for the full stage-by-stage
+  design and a per-stage build/test status table.
+- [`app/`](./app) — Flutter client (macOS target so far). Currently a
+  vertical-slice prototype of the full core loop (library → read →
+  questions → breakdown) running on hand-authored mock content, not yet
+  wired to the real pipeline.
 
-Backend (Go, content-serving API) and frontend (Flutter client) will be
-added as separate top-level directories once the pipeline proves the loop
-end to end (see design doc §8).
+A content-serving backend (Go) and a storage layer are not started yet —
+see [Milestones](#milestones).
 
-## Status
+## Milestones
 
-Pre-v0. Nothing is published yet — the goal right now is one short book
-piped fully through chunking → grading → questions → breakdown → QA.
+**Completed**
+- [x] Design plan drafted — [AIDOKU_DESIGN.md](./AIDOKU_DESIGN.md)
+- [x] Pipeline: sentence segmentation (Stage A) — deterministic, no LLM; run against the real book
+- [x] Pipeline: LLM chunk grouping (Stage B) — built and tested against fakes; not yet run against the real Claude API
+- [x] Pipeline: question generation (vocab/grammar/comprehension) — built and tested against fakes; not yet run against the real Claude API
+- [x] Pipeline: ingest, clean, book catalog, trim — run for real against Project Gutenberg; a real book (Pride and Prejudice) fully cleaned end to end, front/back matter and illustration placeholders handled
+- [x] Flutter app: mock vertical slice of the full core loop, verified running natively on macOS
+
+**Next up**
+- [ ] Run chunk grouping and question generation against the real Claude API for the first time
+- [ ] Breakdown generation stage (not yet designed)
+- [ ] Book grading/leveling stage (not yet designed)
+- [ ] Storage layer + publish stage (no DB yet)
+- [ ] Wire real pipeline output into the Flutter app, replacing the hand-authored mock content
+- [ ] Chapter boundary detection (deliberately deferred to the chunk-grouping stage — see design doc §7)
+- [ ] Pick a real product name (see the working-name note above)
+
+See [AIDOKU_DESIGN.md §3](./AIDOKU_DESIGN.md) for the detailed per-stage status table, and §7 for open design questions.

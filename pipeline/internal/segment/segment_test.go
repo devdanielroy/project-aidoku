@@ -118,6 +118,23 @@ func TestSegment(t *testing.T) {
 			},
 		},
 		{
+			name: "paragraph break forces a boundary even with no terminal punctuation",
+			text: "First sentence. [Illustration: a caption with no ending punctuation]\n\nNext paragraph starts here.",
+			want: []string{
+				"First sentence.",
+				"[Illustration: a caption with no ending punctuation]",
+				"Next paragraph starts here.",
+			},
+		},
+		{
+			name: "paragraph break after normal terminal punctuation is a no-op, not an empty sentence",
+			text: "First paragraph, one sentence.\n\nSecond paragraph, one sentence.",
+			want: []string{
+				"First paragraph, one sentence.",
+				"Second paragraph, one sentence.",
+			},
+		},
+		{
 			name: "Dracula by Bram Stoker excerpt",
 			text: `“Count Dracula?” He bowed in a courtly way as he replied:—
 “I am Dracula; and I bid you welcome, Mr. Harker, to my house. Come in; the night air is chill, and you must need to eat and rest.” As he was speaking, he put the lamp on a bracket on the wall, and stepping out, took my luggage; he had carried it in before I could forestall him. I protested but he insisted:—

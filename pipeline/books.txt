@@ -1,0 +1,22 @@
+# Book catalog: which Gutenberg books to ingest, and where the actual
+# novel text starts/ends within them (everything outside that range -
+# prefaces, illustration lists, colophons, "THE END" notices, and
+# whatever else different editions surround the story with - is trimmed).
+#
+# Format: one entry per block, blocks separated by a single blank line.
+# Each block is exactly 3 lines, in order:
+#   1. the Project Gutenberg plain-text URL
+#   2. the first line of the actual novel content (verbatim, as it reads
+#      after Clean's whitespace normalization - see pipeline/internal/clean)
+#   3. the last line of the actual novel content (verbatim, same rules)
+# An optional "# comment" line (e.g. the book's title) may precede a
+# block for human readability; it's ignored by the parser.
+#
+# Both the first-line and last-line strings must match exactly once in
+# the cleaned text - if a book's chosen anchor isn't unique, pick a
+# longer/more specific line.
+
+# Pride and Prejudice, by Jane Austen (Gutenberg ebook #1342)
+https://www.gutenberg.org/cache/epub/1342/pg1342.txt
+It is a truth universally acknowledged, that a single man in possession of a good fortune must be in want of a wife.
+Darcy, as well as Elizabeth, really loved them; and they were both ever sensible of the warmest gratitude towards the persons who, by bringing her into Derbyshire, had been the means of uniting them.

@@ -29,3 +29,41 @@ type ChunkGroup struct {
 type ChunkGroupingResponse struct {
 	Chunks []ChunkGroup `json:"chunks"`
 }
+
+// Chunk is a published reading chunk: a ChunkGroup's sentences
+// reconstructed back into text (see chunk.BuildChunks). Mirrors the Chunk
+// entity in AIDOKU_DESIGN.md §4, minus storage-assigned fields (id,
+// book_id) that don't exist yet at this stage of the pipeline.
+type Chunk struct {
+	Index     int    `json:"index"`
+	Text      string `json:"text"`
+	CharCount int    `json:"char_count"`
+}
+
+// QuestionType is one of the three question kinds every chunk is tested
+// with. See AIDOKU_DESIGN.md §2 step 4 / §4.
+type QuestionType string
+
+const (
+	QuestionTypeVocab         QuestionType = "vocab"
+	QuestionTypeGrammar       QuestionType = "grammar"
+	QuestionTypeComprehension QuestionType = "comprehension"
+)
+
+// Question is one multiple-choice question tied to a chunk. Mirrors the
+// Question entity in AIDOKU_DESIGN.md §4, and the shape the Flutter
+// client's mock data already uses (see app/assets/mock/*.json) —
+// options/answer take a fixed multiple-choice shape (Options +
+// AnswerIndex), minus storage-assigned fields (id, chunk_id).
+type Question struct {
+	Type        QuestionType `json:"type"`
+	Prompt      string       `json:"prompt"`
+	Options     []string     `json:"options"`
+	AnswerIndex int          `json:"answer_index"`
+	Explanation string       `json:"explanation"`
+	// Highlight is the exact substring of the chunk's text this question
+	// is about — underlined in the passage in place of the prompt
+	// re-quoting it. Empty for comprehension questions, which are about
+	// the whole chunk rather than one word or phrase.
+	Highlight string `json:"highlight,omitempty"`
+}
