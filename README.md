@@ -11,6 +11,73 @@ breakdown before moving on. v1 targets Japanese speakers learning English.
 
 See [AIDOKU_DESIGN.md](./AIDOKU_DESIGN.md) for the full design plan.
 
+## Architecture
+
+What exists today, end to end, plus what's planned next — plain solid
+boxes are built and have been run for real at least once; dashed boxes
+marked ❌ are designed but not built yet:
+
+```mermaid
+flowchart TD
+    GB[("Project Gutenberg<br/>plain text book")]
+    BT["books.txt catalog<br/>title / author / URL / anchors / Level=X<br/>(edited by hand, per book)"]
+
+    subgraph pipeline["pipeline/ (Go module) — run via cmd/process"]
+        direction TB
+        ING["1. Ingest <br/>internal/ingest"]
+        CLN["2. Clean + Trim <br/>internal/clean, internal/catalog"]
+        SEG["3. Segment (Stage A) <br/>internal/segment<br/>deterministic, no LLM"]
+        WIN["Window <br/>internal/chunk.SplitIntoWindows<br/>~3,000 chars/window"]
+        ING --> CLN --> SEG --> WIN
+    end
+
+    subgraph claude["4. Claude API Invocation Steps — real Anthropic API calls"]
+        direction TB
+        GRP["4.1 Group into chunks (Stage B)<br/>internal/chunk"]
+        Q["4.2 Generate questions<br/>internal/question"]
+        BRK["4.3 Generate breakdown<br/>internal/breakdown"]
+        GRP --> Q --> BRK
+    end
+
+    DB[("Postgres <br/>db/schema.sql<br/>via pipeline/internal/db")]
+
+    QA["5. QA pass ❌<br/>manual review, not built"]
+    PUB["6. Publish ❌<br/>processing → published, not built"]
+    API["Content-serving REST API ❌<br/>Go backend, not started"]
+
+    subgraph client["app/ — Flutter client"]
+      direction TB
+        UI["Library → Read → Questions → Breakdown <br/>running on hand-authored mock content"]
+        PROG["Progress + score tracking ❌<br/>per book: chunk index, correct/incorrect"]
+        REVIEW["Chunk review ❌<br/>re-read chunks already cleared"]
+        VOCAB["Vocab / mistake review deck ❌<br/>auto-collected across all books"]
+        STREAK["Streaks + daily goal ❌"]
+        DASH["Library dashboard ❌<br/>completion %, accuracy, continue reading"]
+    end
+
+    GB --> ING
+    BT --> CLN
+    WIN --> GRP
+    GRP -.->|"saved per window, immediately"| DB
+    Q -.->|"saved per chunk"| DB
+    BRK -.->|"saved per chunk"| DB
+    DB -.-> QA -.-> PUB
+    PUB -.-> API
+    API -.-> UI
+
+    classDef notBuilt stroke-dasharray: 5 5
+    class QA,PUB,API,PROG,REVIEW,VOCAB,STREAK,DASH notBuilt
+```
+
+Three separate `pipeline/cmd/*` binaries drive the pipeline side, not
+just `cmd/process`: `cmd/ingest` (stops before the Claude API steps —
+fetch/clean/trim/segment only, free to run), `cmd/livetest` (a
+throwaway smoke test against a few hand-typed sentences, not a real
+book), and `cmd/process` (the real end-to-end run, `-dry-run`-able,
+diagrammed above). Only the user runs anything that invokes the real
+Claude API — see the pipeline stage list above for which steps that
+covers.
+
 ## Layout
 
 - [`pipeline/`](./pipeline) — offline Go module implementing the content
@@ -72,6 +139,11 @@ to leave as-is for local dev.
 - [ ] Wire real pipeline output into the Flutter app, replacing the hand-authored mock content
 - [ ] Chapter boundary detection (deliberately deferred to the chunk-grouping stage — see design doc §7)
 - [ ] Pick a real product name (see the working-name note above)
+- [ ] Per-book progress + score tracking — current chunk index and correct/incorrect answer history per book (`UserProgress`, sketched in AIDOKU_DESIGN.md §4)
+- [ ] Chunk review — let a user flick back through chunks they've already cleared in a book
+- [ ] Personal vocab/mistake review deck — auto-collect words/grammar points answered incorrectly (or flagged) across *all* books into a standalone review list, not just chunk-level re-reading
+- [ ] Streaks + daily goal — reading streak tracking and a daily-goal nudge (AIDOKU_DESIGN.md §5's gamification section named this as TBD; now has a concrete data trigger via `UserProgress`)
+- [ ] Library dashboard — per-book completion % and accuracy, "continue reading" surfacing across the whole library
 
 ## Adding a Book to the Catalog
 
