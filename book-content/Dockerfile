@@ -15,9 +15,9 @@ FROM golang:1.26-alpine AS build
 WORKDIR /workspace
 
 COPY go.work go.work.sum ./
-COPY pipeline/go.mod pipeline/go.mod
-COPY book-content/go.mod book-content/go.mod
-COPY shared/go.mod shared/go.mod
+COPY pipeline/go.mod pipeline/go.sum pipeline/
+COPY book-content/go.mod book-content/go.sum book-content/
+COPY shared/go.mod shared/go.sum shared/
 RUN go mod download
 
 COPY book-content/ book-content/
