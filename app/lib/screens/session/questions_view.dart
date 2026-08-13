@@ -1,6 +1,7 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
-import '../../models/chunk.dart';
 import '../../models/question.dart';
 
 /// Step 2 of the core loop (AIDOKU_DESIGN.md §2 step 4): three questions
@@ -9,7 +10,7 @@ import '../../models/question.dart';
 /// `explanation`; the chunk's full `breakdown` is reserved for after all
 /// three are answered — see BreakdownView.
 class QuestionsView extends StatefulWidget {
-  final Chunk chunk;
+  final List<Question> questions;
   final VoidCallback onComplete;
 
   /// Called whenever the displayed question changes (including once for
@@ -21,7 +22,7 @@ class QuestionsView extends StatefulWidget {
 
   const QuestionsView({
     super.key,
-    required this.chunk,
+    required this.questions,
     required this.onComplete,
     this.onQuestionChanged,
   });
@@ -31,16 +32,27 @@ class QuestionsView extends StatefulWidget {
 }
 
 class _QuestionsViewState extends State<QuestionsView> {
+  final _random = Random();
+
   int _questionIndex = 0;
   int? _selectedOption;
 
-  Question get _question => widget.chunk.questions[_questionIndex];
-  bool get _isLastQuestion =>
-      _questionIndex == widget.chunk.questions.length - 1;
+  /// A shuffled 0..options.length permutation for the current question,
+  /// recomputed once per question (not per build — see initState/
+  /// _advance) — Question.answerIndex is always 0 in the stored data
+  /// (the correct answer is always generated first; see Question's own
+  /// doc comment), so rendering options in their stored order would
+  /// always put the correct answer first. displayOrder[i] is the real
+  /// options-list index shown at display position i.
+  late List<int> _displayOrder;
+
+  Question get _question => widget.questions[_questionIndex];
+  bool get _isLastQuestion => _questionIndex == widget.questions.length - 1;
 
   @override
   void initState() {
     super.initState();
+    _displayOrder = _shuffledIndices(_question.options.length);
     // Deferred to after the first frame: calling widget.onQuestionChanged
     // synchronously here could trigger setState on an ancestor that's
     // still mid-build (this widget is being built as part of it).
@@ -49,9 +61,12 @@ class _QuestionsViewState extends State<QuestionsView> {
     });
   }
 
-  void _selectOption(int index) {
+  List<int> _shuffledIndices(int length) =>
+      List<int>.generate(length, (i) => i)..shuffle(_random);
+
+  void _selectOption(int displayIndex) {
     if (_selectedOption != null) return; // already answered — locked in
-    setState(() => _selectedOption = index);
+    setState(() => _selectedOption = displayIndex);
   }
 
   void _advance() {
@@ -62,6 +77,7 @@ class _QuestionsViewState extends State<QuestionsView> {
     setState(() {
       _questionIndex++;
       _selectedOption = null;
+      _displayOrder = _shuffledIndices(_question.options.length);
     });
     widget.onQuestionChanged?.call(_question);
   }
@@ -100,19 +116,22 @@ class _QuestionsViewState extends State<QuestionsView> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Question ${_questionIndex + 1} of ${widget.chunk.questions.length}',
+                    'Question ${_questionIndex + 1} of ${widget.questions.length}',
                     style: theme.textTheme.bodySmall,
                   ),
                   const SizedBox(height: 16),
                   Text(question.prompt, style: theme.textTheme.titleLarge),
                   const SizedBox(height: 24),
-                  for (var i = 0; i < question.options.length; i++) ...[
+                  // Rendered in _displayOrder, not stored order — see its
+                  // doc comment. _displayOrder[i] is the real options-list
+                  // index shown at display position i.
+                  for (var i = 0; i < _displayOrder.length; i++) ...[
                     if (i > 0) const SizedBox(height: 12),
                     _OptionTile(
-                      text: question.options[i],
+                      text: question.options[_displayOrder[i]],
                       state: !answered
                           ? _OptionState.neutral
-                          : i == question.answerIndex
+                          : _displayOrder[i] == question.answerIndex
                           ? _OptionState.correct
                           : i == _selectedOption
                           ? _OptionState.incorrect

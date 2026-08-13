@@ -1,38 +1,80 @@
 import 'package:flutter/material.dart';
 
+import '../data/book_content_repository.dart';
 import '../models/book.dart';
-import '../models/chunk.dart';
+import '../models/loaded_chunk.dart';
 import 'session/chunk_panel.dart';
 import 'session/complete_view.dart';
 
-/// Owns the whole reading session for one book: which chunk we're on, and
-/// whether the book (or, for now, mock excerpt) is complete. The entire
-/// per-chunk loop — reading, questions, breakdown — is delegated to
-/// ChunkPanel, which is fundamentally one continuous, persistent screen
-/// per chunk rather than a stack of independent ones (see its doc
-/// comment); this screen only needs to know when a chunk finishes and
-/// whether another one follows.
+/// Owns the whole reading session for one book: which chunk we're on,
+/// fetching each chunk's full content (text + questions + breakdown) as
+/// the reader reaches it, and whether the book is complete. The
+/// per-chunk loop itself — reading, questions, breakdown — is delegated
+/// to ChunkPanel (see its doc comment); this screen only needs to know
+/// the current chunk's id, fetch its content, and know when to advance.
+///
+/// Chunk ids are fetched once up front (GET .../chunks — cheap, ids
+/// only); each chunk's actual content is fetched lazily, one at a time,
+/// as the reader reaches it — not all up front, matching how the
+/// reading flow is actually used (see BookContentRepository.loadChunk).
 class ReadingSessionScreen extends StatefulWidget {
   final Book book;
+  final BookContentRepository repository;
 
-  const ReadingSessionScreen({super.key, required this.book});
+  const ReadingSessionScreen({
+    super.key,
+    required this.book,
+    required this.repository,
+  });
 
   @override
   State<ReadingSessionScreen> createState() => _ReadingSessionScreenState();
 }
 
 class _ReadingSessionScreenState extends State<ReadingSessionScreen> {
+  late final Future<List<int>> _chunkIdsFuture;
+
+  List<int> _chunkIds = const [];
   int _chunkIndex = 0;
   bool _complete = false;
+  Future<LoadedChunk>? _currentChunkFuture;
 
-  Chunk get _currentChunk => widget.book.chunks[_chunkIndex];
-  int get _totalChunks => widget.book.chunks.length;
+  @override
+  void initState() {
+    super.initState();
+    _chunkIdsFuture = widget.repository.getChunkIds(widget.book.id);
+    // Kick off the first chunk's content fetch the moment the id list
+    // arrives, rather than waiting for a rebuild to notice — .catchError
+    // here just stops this specific listener from surfacing an "unhandled
+    // exception" warning; the FutureBuilder below watches the same
+    // _chunkIdsFuture independently and is what actually shows the error.
+    _chunkIdsFuture
+        .then((ids) {
+          if (!mounted) return;
+          setState(() {
+            _chunkIds = ids;
+            if (ids.isNotEmpty) {
+              _currentChunkFuture = widget.repository.loadChunk(ids[0]);
+            }
+          });
+        })
+        .catchError((_) {});
+  }
 
-  double get _progress => _complete ? 1.0 : _chunkIndex / _totalChunks;
+  double get _progress {
+    if (_complete) return 1.0;
+    if (_chunkIds.isEmpty) return 0.0;
+    return _chunkIndex / _chunkIds.length;
+  }
 
   void _onChunkComplete() {
-    if (_chunkIndex + 1 < _totalChunks) {
-      setState(() => _chunkIndex++);
+    if (_chunkIndex + 1 < _chunkIds.length) {
+      setState(() {
+        _chunkIndex++;
+        _currentChunkFuture = widget.repository.loadChunk(
+          _chunkIds[_chunkIndex],
+        );
+      });
     } else {
       setState(() => _complete = true);
     }
@@ -42,6 +84,7 @@ class _ReadingSessionScreenState extends State<ReadingSessionScreen> {
     setState(() {
       _chunkIndex = 0;
       _complete = false;
+      _currentChunkFuture = widget.repository.loadChunk(_chunkIds[0]);
     });
   }
 
@@ -55,16 +98,52 @@ class _ReadingSessionScreenState extends State<ReadingSessionScreen> {
           child: LinearProgressIndicator(value: _progress),
         ),
       ),
-      body: _complete
-          ? CompleteView(book: widget.book, onRestart: _onRestart)
-          : ChunkPanel(
-              key: ValueKey('chunk-${_currentChunk.id}'),
-              chunk: _currentChunk,
-              chunkNumber: _chunkIndex + 1,
-              totalChunks: _totalChunks,
-              isLastChunk: _chunkIndex + 1 >= _totalChunks,
-              onChunkComplete: _onChunkComplete,
-            ),
+      body: FutureBuilder<List<int>>(
+        future: _chunkIdsFuture,
+        builder: (context, chunkIdsSnapshot) {
+          if (chunkIdsSnapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (chunkIdsSnapshot.hasError) {
+            return Center(
+              child: Text('Failed to load chunks: ${chunkIdsSnapshot.error}'),
+            );
+          }
+          final chunkIds = chunkIdsSnapshot.data!;
+          if (chunkIds.isEmpty) {
+            return const Center(child: Text('This book has no chunks yet.'));
+          }
+          if (_complete) {
+            return CompleteView(
+              book: widget.book,
+              totalChunks: chunkIds.length,
+              onRestart: _onRestart,
+            );
+          }
+          return FutureBuilder<LoadedChunk>(
+            future: _currentChunkFuture,
+            builder: (context, chunkSnapshot) {
+              if (chunkSnapshot.connectionState != ConnectionState.done) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (chunkSnapshot.hasError) {
+                return Center(
+                  child: Text('Failed to load chunk: ${chunkSnapshot.error}'),
+                );
+              }
+              final loaded = chunkSnapshot.data!;
+              return ChunkPanel(
+                key: ValueKey('chunk-${loaded.chunk.id}'),
+                loadedChunk: loaded,
+                chunkNumber: _chunkIndex + 1,
+                totalChunks: chunkIds.length,
+                isLastChunk: _chunkIndex + 1 >= chunkIds.length,
+                onChunkComplete: _onChunkComplete,
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }

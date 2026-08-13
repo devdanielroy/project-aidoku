@@ -77,10 +77,7 @@ class ReadingView extends StatelessWidget {
             ),
             if (showContinueButton) ...[
               const SizedBox(height: 24),
-              FilledButton(
-                onPressed: onDone,
-                child: const Text("I've read it — continue"),
-              ),
+              FilledButton(onPressed: onDone, child: const Text("Continue")),
             ],
           ],
         ),

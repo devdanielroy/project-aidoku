@@ -2,13 +2,19 @@ import 'package:flutter/material.dart';
 
 import '../../models/book.dart';
 
-/// Shown once every chunk in the book (or, for now, mock excerpt) has been
-/// read, questioned, and broken down.
+/// Shown once every chunk in the book has been read, questioned, and
+/// broken down.
 class CompleteView extends StatelessWidget {
   final Book book;
+  final int totalChunks;
   final VoidCallback onRestart;
 
-  const CompleteView({super.key, required this.book, required this.onRestart});
+  const CompleteView({
+    super.key,
+    required this.book,
+    required this.totalChunks,
+    required this.onRestart,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -22,13 +28,13 @@ class CompleteView extends StatelessWidget {
             Icon(Icons.celebration, size: 64, color: theme.colorScheme.primary),
             const SizedBox(height: 16),
             Text(
-              'You finished this excerpt of "${book.title}"!',
+              'You finished "${book.title}"!',
               textAlign: TextAlign.center,
               style: theme.textTheme.titleLarge,
             ),
             const SizedBox(height: 8),
             Text(
-              'Only ${book.chunks.length} chunk(s) exist so far — this is a mock vertical slice, not the full book.',
+              '$totalChunks chunk(s) read.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,

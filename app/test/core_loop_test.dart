@@ -9,17 +9,26 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:aidoku/main.dart';
+import 'package:aidoku/data/book_content_repository.dart';
+import 'package:aidoku/screens/library_screen.dart';
+
+import 'fixtures/fake_book_content.dart';
 
 void main() {
   testWidgets(
     'full core loop: read -> answer 3 questions -> breakdown -> next chunk',
     (WidgetTester tester) async {
-      await tester.pumpWidget(const AidokuApp());
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LibraryScreen(
+            repository: BookContentRepository(client: fakeBookContentClient()),
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
 
       // Pick the book.
-      await tester.tap(find.text('Pride and Prejudice'));
+      await tester.tap(find.text('Test Book'));
       await tester.pumpAndSettle();
 
       // Reading phase: chunk 1's text is shown, no questions yet.
@@ -30,19 +39,25 @@ void main() {
       // either of those would ambiguously match both the passage and the
       // breakdown text once the breakdown is showing.
       expect(find.textContaining('must be in want of a wife'), findsOneWidget);
-      await tester.tap(find.text("I've read it — continue"));
+      await tester.tap(find.text("Continue"));
       await tester.pumpAndSettle();
 
       // The passage stays visible (shrunk into the top pane) once the
       // questions sheet is up — it's meant to never disappear.
       expect(find.textContaining('must be in want of a wife'), findsOneWidget);
 
-      // Questions phase: answer all 3 questions for chunk 1. The correct
-      // option is always index 0 in the mock data, so tapping the first
-      // option tile answers correctly every time.
+      // Questions phase: answer all 3 questions for chunk 1. Options are
+      // shuffled for display (see QuestionsView), so tap by the known
+      // correct answer's text, not by position.
       for (var i = 0; i < 3; i++) {
         expect(find.text('Question ${i + 1} of 3'), findsOneWidget);
-        await tester.tap(find.byType(InkWell).first);
+        // Options are shuffled for display (see QuestionsView), so the
+        // correct answer can land anywhere — including scrolled out of
+        // the sheet's fixed-height view — unlike always tapping the
+        // first option.
+        final correctOption = find.text(chunk101CorrectAnswers[i]);
+        await tester.ensureVisible(correctOption);
+        await tester.tap(correctOption);
         await tester.pumpAndSettle();
         final buttonText = i == 2 ? 'See the full breakdown' : 'Next question';
         await tester.tap(find.text(buttonText));

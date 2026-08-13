@@ -8,5 +8,13 @@
 	<true/>
 	<key>com.apple.security.network.server</key>
 	<true/>
+	<!-- Required for any outbound connection — including to localhost —
+	     from a sandboxed macOS app. Without this, BookContentRepository's
+	     HTTP calls fail with "SocketException: Operation not permitted,
+	     errno = 1", not a Docker/port-forwarding issue (the port is
+	     published fine — this is the App Sandbox blocking the socket()
+	     call before it leaves the process). -->
+	<key>com.apple.security.network.client</key>
+	<true/>
 </dict>
 </plist>

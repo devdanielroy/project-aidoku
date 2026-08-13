@@ -6,22 +6,31 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:aidoku/main.dart';
+import 'package:aidoku/data/book_content_repository.dart';
+import 'package:aidoku/screens/library_screen.dart';
+
+import 'fixtures/fake_book_content.dart';
 
 void main() {
   testWidgets(
     'the first vocab question underlines its target word in the passage',
     (WidgetTester tester) async {
-      await tester.pumpWidget(const AidokuApp());
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LibraryScreen(
+            repository: BookContentRepository(client: fakeBookContentClient()),
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Pride and Prejudice'));
+      await tester.tap(find.text('Test Book'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text("I've read it — continue"));
+      await tester.tap(find.text("Continue"));
       await tester.pumpAndSettle();
 
-      // Chunk 1's first question is the vocab question, highlighting
-      // "acknowledged" — see assets/mock/pride_and_prejudice.json.
+      // Chunk 101's first question is the vocab question, highlighting
+      // "acknowledged" — see test/fixtures/fake_book_content.dart.
       //
       // Text.rich wraps the TextSpan it's given in an extra outer TextSpan
       // (RichText(text: TextSpan(children: [theSpanWePassed]))), so the

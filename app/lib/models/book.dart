@@ -1,42 +1,63 @@
-import 'chunk.dart';
-
-/// A book available to read, with its chunks already attached (a
-/// mock-only convenience — see Chunk's doc comment). See
+/// A book available to read. Mirrors book-content's book response
+/// exactly (GET /aidoku/books, /aidoku/book/{book_id}) — see
+/// book-content/internal/db's Book struct. Deliberately doesn't carry
+/// its chunk ids: that's a separate call (GET
+/// /aidoku/book/{book_id}/chunks), not part of this response, so this
+/// type stays a 1:1 match for either endpoint rather than two
+/// different shapes depending on which one produced it. See
 /// AIDOKU_DESIGN.md §4.
 class Book {
-  final String id;
+  final int id;
+  final int gutenbergId;
   final String title;
   final String author;
   final String sourceUrl;
-  final String levelTag;
+
+  /// 1 (easiest) to 10 (hardest) — see readingLevelName for the
+  /// human-facing name (README's Reading Levels table).
+  final int level;
   final String language;
   final String status;
-  final List<Chunk> chunks;
 
   const Book({
     required this.id,
+    required this.gutenbergId,
     required this.title,
     required this.author,
     required this.sourceUrl,
-    required this.levelTag,
+    required this.level,
     required this.language,
     required this.status,
-    required this.chunks,
   });
 
   factory Book.fromJson(Map<String, dynamic> json) {
-    final bookJson = json['book'] as Map<String, dynamic>;
     return Book(
-      id: bookJson['id'] as String,
-      title: bookJson['title'] as String,
-      author: bookJson['author'] as String,
-      sourceUrl: bookJson['source_url'] as String,
-      levelTag: bookJson['level_tag'] as String,
-      language: bookJson['language'] as String,
-      status: bookJson['status'] as String,
-      chunks: (json['chunks'] as List)
-          .map((c) => Chunk.fromJson(c as Map<String, dynamic>))
-          .toList(),
+      id: json['id'] as int,
+      gutenbergId: json['gutenberg_id'] as int,
+      title: json['title'] as String,
+      author: json['author'] as String,
+      sourceUrl: json['source_url'] as String,
+      level: json['level'] as int,
+      language: json['language'] as String,
+      status: json['status'] as String,
     );
   }
+
+  /// The human-facing name for [level] — README's Reading Levels table
+  /// (Initiate..Scholar), kept in sync by hand since it's just a display
+  /// label, not something book-content's API sends over the wire.
+  String get readingLevelName => _readingLevelNames[level] ?? 'Level $level';
 }
+
+const _readingLevelNames = {
+  1: 'Initiate',
+  2: 'Novice',
+  3: 'Apprentice',
+  4: 'Reader',
+  5: 'Bookworm',
+  6: 'Erudite',
+  7: 'Virtuoso',
+  8: 'Luminary',
+  9: 'Academic',
+  10: 'Scholar',
+};

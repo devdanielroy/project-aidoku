@@ -286,12 +286,6 @@ func TestClean_RealPrideAndPrejudice(t *testing.T) {
 		t.Error(`expected the "_You_" emphasis underscores to survive untouched`)
 	}
 
-	// TEMPORARY - for manual inspection only, remove before committing.
-	outPath := filepath.Join(os.TempDir(), "pride_and_prejudice.txt")
-	if err := os.WriteFile(outPath, []byte(got), 0644); err != nil {
-		t.Fatalf("write inspection file: %v", err)
-	}
-	t.Logf("wrote cleaned output to %s", outPath)
 }
 
 // TestTrim_RealPrideAndPrejudice runs Clean then Trim on the real Pride

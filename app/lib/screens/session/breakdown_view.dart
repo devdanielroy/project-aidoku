@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../models/chunk.dart';
+import '../../models/breakdown.dart';
 
 /// Step 3 of the core loop (AIDOKU_DESIGN.md §2 step 5): the full
 /// breakdown — vocab, grammar, meaning, written in the learner's L1 — is
@@ -8,13 +8,13 @@ import '../../models/chunk.dart';
 /// inside the same bottom sheet as QuestionsView (see ChunkPanel), with
 /// the passage still visible — now squeezed smaller — above it.
 class BreakdownView extends StatelessWidget {
-  final Chunk chunk;
+  final Breakdown breakdown;
   final bool isLastChunk;
   final VoidCallback onNext;
 
   const BreakdownView({
     super.key,
-    required this.chunk,
+    required this.breakdown,
     required this.isLastChunk,
     required this.onNext,
   });
@@ -41,7 +41,7 @@ class BreakdownView extends StatelessWidget {
             Expanded(
               child: SingleChildScrollView(
                 child: Text(
-                  chunk.breakdown.content,
+                  breakdown.content,
                   style: theme.textTheme.bodyLarge?.copyWith(height: 1.7),
                 ),
               ),

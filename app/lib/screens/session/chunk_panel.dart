@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../models/chunk.dart';
+import '../../models/loaded_chunk.dart';
 import '../../models/question.dart';
 import 'breakdown_view.dart';
 import 'questions_view.dart';
@@ -23,7 +23,7 @@ enum _ChunkPhase { reading, questions, breakdown }
 ///   longest content of the three) and the passage is squeezed into a
 ///   small strip at the top, in smaller text, but never hidden entirely.
 class ChunkPanel extends StatefulWidget {
-  final Chunk chunk;
+  final LoadedChunk loadedChunk;
   final int chunkNumber;
   final int totalChunks;
   final bool isLastChunk;
@@ -31,7 +31,7 @@ class ChunkPanel extends StatefulWidget {
 
   const ChunkPanel({
     super.key,
-    required this.chunk,
+    required this.loadedChunk,
     required this.chunkNumber,
     required this.totalChunks,
     required this.isLastChunk,
@@ -100,7 +100,7 @@ class _ChunkPanelState extends State<ChunkPanel> {
                   right: 0,
                   bottom: panelHeight,
                   child: ReadingView(
-                    chunk: widget.chunk,
+                    chunk: widget.loadedChunk.chunk,
                     chunkNumber: widget.chunkNumber,
                     totalChunks: widget.totalChunks,
                     onDone: _revealQuestions,
@@ -129,13 +129,13 @@ class _ChunkPanelState extends State<ChunkPanel> {
                         child: _phase == _ChunkPhase.breakdown
                             ? BreakdownView(
                                 key: const ValueKey('breakdown'),
-                                chunk: widget.chunk,
+                                breakdown: widget.loadedChunk.breakdown,
                                 isLastChunk: widget.isLastChunk,
                                 onNext: widget.onChunkComplete,
                               )
                             : QuestionsView(
                                 key: const ValueKey('questions'),
-                                chunk: widget.chunk,
+                                questions: widget.loadedChunk.questions,
                                 onComplete: _revealBreakdown,
                                 onQuestionChanged: _onActiveQuestionChanged,
                               ),

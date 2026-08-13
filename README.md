@@ -47,7 +47,7 @@ flowchart TD
 
     subgraph client["app/ — Flutter client"]
       direction TB
-        UI["Library → Read → Questions → Breakdown <br/>running on hand-authored mock content"]
+        UI["Library → Read → Questions → Breakdown <br/>wired to book-content over HTTP"]
         PROG["Progress + score tracking ❌<br/>per book: chunk index, correct/incorrect"]
         REVIEW["Chunk review ❌<br/>re-read chunks already cleared"]
         VOCAB["Vocab / mistake review deck ❌<br/>auto-collected across all books"]
@@ -101,10 +101,10 @@ covers.
   purpose, so the two modules aren't coupled by a shared schema
   representation. Tied together with `pipeline/` and `book-content/` via
   [`go.work`](./go.work) at the repo root for local development.
-- [`app/`](./app) — Flutter client (macOS target so far). Currently a
-  vertical-slice prototype of the full core loop (library → read →
-  questions → breakdown) running on hand-authored mock content, not yet
-  wired to the real backend.
+- [`app/`](./app) — Flutter client (macOS target so far). The full core
+  loop (library → read → questions → breakdown) runs against real
+  pipeline output via `book-content`, not mock content —
+  `BookContentRepository` (`lib/data/`) talks to it over HTTP.
 - [`db/schema.sql`](./db/schema.sql) — the Postgres schema (books,
   chunks, questions, breakdowns, user progress), written to by
   `pipeline/internal/db` and read by `book-content/internal/db`. See
@@ -171,9 +171,9 @@ go run ./book-content/cmd/server        # listens on :8080
 - [x] Run `cmd/process` for real against The Vampyre — the full book, not just a test batch (estimated cost ~$5)
 - [x] Content-serving REST API (`book-content/`) — a separate Go module, read-only, serving book/chunk/question/breakdown as JSON over `/aidoku/...`, filtered to published books; connection plumbing shared with the pipeline via a third module (`shared/`) wired together with `go.work`. Smoke-tested end to end against the real Postgres data from The Vampyre (published manually via a one-off SQL update, since Publish tooling doesn't exist yet) — full book → chunk → question/breakdown chain, plus 404/400 error paths and graceful shutdown all verified against the running server.
 - [x] `book-content` added to `docker-compose.yml` (`book-content/Dockerfile`, multi-stage, built from the repo root since it resolves `shared/` via `go.work`) — `docker compose up -d` now brings up Postgres and the API together, `book-content` waiting on Postgres's healthcheck; verified with a real `docker compose up -d` / container-to-container request over the compose network, not just `go run` on the host.
+- [x] Flutter app wired to `book-content` (`BookContentRepository`, `lib/data/`) — the hand-authored mock content and `MockBookRepository` are gone; models flattened to match the API's response shapes exactly, chunk/question/breakdown fetched lazily per chunk (`LoadedChunk`) rather than all up front. Fixed a real bug surfaced by wiring in real data: `QuestionsView` rendered options in stored order (where the correct answer is always index 0 — see `pipeline/internal/question`), so it now shuffles for display. Widget tests rewired to a fake HTTP transport (`package:http`'s `MockClient`) instead of the removed mock repository, so they stay hermetic. Verified running natively on macOS end to end against the real Vampyre data — library → read → 3 questions → breakdown → next chunk. Needed one macOS-specific fix along the way: the App Sandbox blocks outbound connections (even to `localhost`) without the `com.apple.security.network.client` entitlement, which the default Flutter macOS template doesn't grant — added to both `Debug`/`Release.entitlements`.
 
 **Next up**
-- [ ] Wire real pipeline output into the Flutter app, replacing the hand-authored mock content
 - [ ] Chapter boundary detection (deliberately deferred to the chunk-grouping stage — see design doc §7)
 - [ ] Pick a real product name (see the working-name note above)
 - [ ] Per-book progress + score tracking — current chunk index and correct/incorrect answer history per book (`UserProgress`, sketched in AIDOKU_DESIGN.md §4)

@@ -138,10 +138,6 @@ func (g *Generator) callLLM(ctx context.Context, chunk types.Chunk) (string, err
 	return strings.TrimSpace(text), nil
 }
 
-// systemPrompt fixes the breakdown's content and house style — matching
-// the format already validated in the Flutter mock content
-// (app/assets/mock/pride_and_prejudice.json) — and the plain-text (not
-// JSON) output contract.
 var systemPrompt = `You are a stage in an offline book-processing pipeline for a language-learning app. The learner is a Japanese speaker (L1) learning English (L2) through literature. You will receive a single JSON object describing one reading "chunk": {"index": <int>, "text": <string>, "char_count": <int>}. The learner has already read this chunk unassisted and answered three questions about it (vocab, grammar, comprehension). Your job is to write the full breakdown they see next: a thorough explanation of the passage, in Japanese.
 
 Cover, as relevant to this specific chunk:

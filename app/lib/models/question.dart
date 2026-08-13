@@ -14,29 +14,28 @@ QuestionType questionTypeFromString(String value) {
   throw ArgumentError('Unknown question type: $value');
 }
 
-/// One multiple-choice question tied to a chunk. Mirrors the Question
-/// entity in AIDOKU_DESIGN.md §4 — options/answer here take a fixed
-/// multiple-choice shape (options + answerIndex), the simplest concrete
-/// form of that field for this mock; the real pipeline's exact question
-/// shape is still open.
+/// One multiple-choice question tied to a chunk. Mirrors book-content's
+/// question response exactly (GET /aidoku/question/{question_id}) — see
+/// book-content/internal/db's Question struct and AIDOKU_DESIGN.md §4.
+///
+/// [answerIndex] is always 0 in the stored data — the generation prompt
+/// (pipeline/internal/question) deliberately always puts the correct
+/// answer first and leaves shuffling for display to the client. See
+/// QuestionsView, which shuffles before rendering rather than trusting
+/// [options] to already be in a random order.
 class Question {
-  final String id;
+  final int id;
+  final int chunkId;
   final QuestionType type;
   final String prompt;
   final List<String> options;
   final int answerIndex;
   final String explanation;
-
-  /// The exact substring of the chunk's text this question is about —
-  /// underlined in the passage while this question is on screen instead
-  /// of being re-quoted in the prompt. Null for comprehension questions,
-  /// which are about the whole chunk rather than one word or phrase. Must
-  /// appear verbatim in the chunk text; see ReadingView, which falls back
-  /// to no underline if it doesn't.
   final String? highlight;
 
   const Question({
     required this.id,
+    required this.chunkId,
     required this.type,
     required this.prompt,
     required this.options,
@@ -47,7 +46,8 @@ class Question {
 
   factory Question.fromJson(Map<String, dynamic> json) {
     return Question(
-      id: json['id'] as String,
+      id: json['id'] as int,
+      chunkId: json['chunk_id'] as int,
       type: questionTypeFromString(json['type'] as String),
       prompt: json['prompt'] as String,
       options: (json['options'] as List).cast<String>(),
