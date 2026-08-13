@@ -1,15 +1,14 @@
-// Package db persists pipeline output — books, chunks, questions, and
-// breakdowns — to Postgres. See db/schema.sql at the repo root for the
-// actual DDL and AIDOKU_DESIGN.md §4/§6 for the data model and storage
-// decision.
+// Package db is the read-only query layer this server uses to serve
+// book/chunk/question/breakdown content out of Postgres to the Flutter
+// app. See db/schema.sql at the repo root for the actual DDL.
 //
-// Nothing in this package talks to the Anthropic API; it's purely the
-// write side for whatever earlier pipeline stages already produced. The
-// connection-level plumbing (Conn interface, Open, ConnStringFromEnv) is
-// shared with book-content/internal/db (the read side, a separate Go module)
-// via shared/dbconn — only the actual Store/query logic stays separate,
-// since the two sides genuinely want different shapes for the same
-// tables (upsert vs. serve).
+// This is a separate Go module from pipeline/internal/db (its write-side
+// counterpart) — see AIDOKU_DESIGN.md's backend handoff notes for why
+// the two aren't shared, though the connection-level plumbing (conn
+// interface, Open, ConnStringFromEnv) is, via shared/dbconn. Every query
+// here also enforces that a book is published (see store.go) — nothing
+// pipeline-generated but not yet QA'd/published is ever reachable
+// through this API.
 package db
 
 import (
@@ -21,12 +20,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// conn is dbconn.Conn under a shorter local name — every existing
-// reference to conn in this package (Store, tests) keeps working
-// unchanged.
+// conn is dbconn.Conn under a shorter local name.
 type conn = dbconn.Conn
 
-// Store persists pipeline output to Postgres.
+// Store reads pipeline output back out of Postgres.
 type Store struct {
 	db conn
 }

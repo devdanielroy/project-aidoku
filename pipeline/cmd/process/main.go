@@ -50,12 +50,12 @@ import (
 	"aidoku/pipeline/internal/catalog"
 	"aidoku/pipeline/internal/chunk"
 	"aidoku/pipeline/internal/db"
-	"aidoku/pipeline/internal/dotenv"
 	"aidoku/pipeline/internal/ingest"
 	"aidoku/pipeline/internal/pipeline"
 	"aidoku/pipeline/internal/question"
 	"aidoku/pipeline/internal/segment"
 	"aidoku/pipeline/internal/types"
+	"aidoku/shared/dotenv"
 )
 
 func main() {

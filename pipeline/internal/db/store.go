@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
-
 	"aidoku/pipeline/internal/catalog"
 	"aidoku/pipeline/internal/types"
 )
@@ -161,7 +159,3 @@ func orDefault(s, fallback string) string {
 	}
 	return fallback
 }
-
-// compile-time check that pgx.Tx satisfies conn — the whole point of the
-// interface (see db.go's doc comment on conn).
-var _ conn = (pgx.Tx)(nil)

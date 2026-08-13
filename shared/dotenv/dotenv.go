@@ -1,8 +1,10 @@
 // Package dotenv is a minimal .env file loader for command entrypoints
 // that need local credentials (ANTHROPIC_API_KEY, POSTGRES_*) without a
-// third-party dependency for something this small. Extracted out of
-// cmd/livetest once cmd/process needed the exact same loading — see each
-// command's own doc comment for what it uses it for.
+// third-party dependency for something this small. Shared between
+// pipeline/ and book-content/ (two separate Go modules, wired together via
+// go.work at the repo root) — originally duplicated between them, then
+// promoted here once a third near-identical copy (book-content/'s) made the
+// duplication clearly not worth it.
 package dotenv
 
 import (

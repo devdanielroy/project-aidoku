@@ -15,7 +15,7 @@
 // isn't, rather than silently skipping the save.
 //
 // Requires ANTHROPIC_API_KEY, either already exported or present in a
-// .env file at the repo root (see internal/dotenv).
+// .env file at the repo root (see shared/dotenv).
 package main
 
 import (
@@ -30,9 +30,9 @@ import (
 	"aidoku/pipeline/internal/catalog"
 	"aidoku/pipeline/internal/chunk"
 	"aidoku/pipeline/internal/db"
-	"aidoku/pipeline/internal/dotenv"
 	"aidoku/pipeline/internal/question"
 	"aidoku/pipeline/internal/types"
+	"aidoku/shared/dotenv"
 )
 
 // book identifies Pride and Prejudice (a real book, Gutenberg #1342) —

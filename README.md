@@ -42,8 +42,8 @@ flowchart TD
     DB[("Postgres <br/>db/schema.sql<br/>via pipeline/internal/db")]
 
     QA["5. QA pass ❌<br/>manual review, not built"]
-    PUB["6. Publish ❌<br/>processing → published, not built"]
-    API["Content-serving REST API ❌<br/>Go backend, not started"]
+    PUB["6. Publish ❌<br/>processing → published<br/>manual SQL, no real tooling"]
+    API["Content-serving REST API<br/>book-content/ (Go module), read-only<br/>/aidoku/... routes"]
 
     subgraph client["app/ — Flutter client"]
       direction TB
@@ -66,7 +66,7 @@ flowchart TD
     API -.-> UI
 
     classDef notBuilt stroke-dasharray: 5 5
-    class QA,PUB,API,PROG,REVIEW,VOCAB,STREAK,DASH notBuilt
+    class QA,PUB,PROG,REVIEW,VOCAB,STREAK,DASH notBuilt
 ```
 
 Three separate `pipeline/cmd/*` binaries drive the pipeline side, not
@@ -88,37 +88,73 @@ covers.
   with zero API calls made). See
   [AIDOKU_DESIGN.md §3](./AIDOKU_DESIGN.md) for the full stage-by-stage
   design and a per-stage build/test status table.
+- [`book-content/`](./book-content) — the content-serving REST API, a separate Go
+  module from `pipeline/`. Read-only: `internal/db` queries Postgres
+  (filtered to published books only), `internal/api` serves it as JSON
+  over the `/aidoku/...` routes, `cmd/server` is the entry point. Never
+  calls the Claude API or writes anything.
+- [`shared/`](./shared) — a third Go module holding only what
+  `pipeline/` and `book-content/` need byte-for-byte identically: the
+  Postgres connection plumbing (`dbconn`) and the `.env` loader
+  (`dotenv`). Deliberately *not* home to the data model — `pipeline`'s
+  write-shaped types and `book-content`'s read-shaped types stay separate on
+  purpose, so the two modules aren't coupled by a shared schema
+  representation. Tied together with `pipeline/` and `book-content/` via
+  [`go.work`](./go.work) at the repo root for local development.
 - [`app/`](./app) — Flutter client (macOS target so far). Currently a
   vertical-slice prototype of the full core loop (library → read →
   questions → breakdown) running on hand-authored mock content, not yet
-  wired to the real pipeline.
+  wired to the real backend.
 - [`db/schema.sql`](./db/schema.sql) — the Postgres schema (books,
   chunks, questions, breakdowns, user progress), written to by
-  [`pipeline/internal/db`](./pipeline/internal/db). See
-  [AIDOKU_DESIGN.md §4/§6/§7f](./AIDOKU_DESIGN.md) for the data model,
-  storage decision, and package, and [Development](#development) below
-  to run Postgres locally.
+  `pipeline/internal/db` and read by `book-content/internal/db`. See
+  [AIDOKU_DESIGN.md §4/§6/§7f](./AIDOKU_DESIGN.md) for the data model
+  and storage decision, and [Development](#development) below to run
+  Postgres locally.
 
-A content-serving backend (Go) is not started yet — see
-[Milestones](#milestones). The pipeline can persist its own output
-(`pipeline/internal/db`), but nothing yet *serves* it back out to a
-client — that's the backend's job once it exists.
+The pipeline persists its own output and the backend now serves it back
+out over HTTP — see [Milestones](#milestones). Still missing: the
+Flutter app isn't wired to the real backend yet, and stages 5/6
+(QA pass, Publish) are still a manual `UPDATE book SET
+status='published'`, not real tooling.
 
 ## Development
 
-Local Postgres, for keeping pipeline output (chunks, questions,
-breakdowns) around between dev sessions instead of losing it every time a
-script exits:
+Local Postgres, plus the content-serving API (`book-content/`) reading from
+it — one command brings both up, ready for the Flutter app to hit at
+`http://localhost:8080/aidoku/...`:
 
 ```sh
 docker compose up -d
 ```
 
-Schema is applied automatically the first time (a fresh named volume) —
-see `db/schema.sql`. Data persists across restarts; `docker compose down
--v` is the only thing that discards it. Connection defaults live in
-`.env` (`POSTGRES_*`), matching `docker-compose.yml`'s fallbacks — fine
-to leave as-is for local dev.
+Postgres's schema is applied automatically the first time (a fresh
+named volume) — see `db/schema.sql`. Data persists across restarts;
+`docker compose down -v` is the only thing that discards it. `book-content`
+waits for Postgres's healthcheck before starting (`depends_on:
+condition: service_healthy`). Connection defaults live in `.env`
+(`POSTGRES_*`), matching `docker-compose.yml`'s fallbacks — fine to
+leave as-is for local dev. After changing `book-content/`'s code, rebuild its
+image with `docker compose up -d --build book-content`.
+
+Only published books are served — see a book's `status` in
+`db/schema.sql`. There's no Publish tooling yet (stage 6, still
+manual), so during development that means running the one-off SQL
+yourself, e.g. via `docker compose exec postgres psql -U aidoku -d
+aidoku -c "UPDATE book SET status = 'published' WHERE gutenberg_id =
+<id>;"`.
+
+`pipeline/`, `book-content/`, and `shared/` are three separate Go modules,
+tied together by [`go.work`](./go.work) at the repo root — run `go
+build`/`go test`/`go vet` against all three at once from the repo root
+with `./pipeline/... ./book-content/... ./shared/...` (a bare `./...` from the
+root doesn't work, since the root itself isn't a module). For faster
+iteration than a full container rebuild, run the API server directly
+against the Dockerized Postgres:
+
+```sh
+go run ./book-content/cmd/server        # listens on :8080
+```
 
 ## Milestones
 
@@ -133,9 +169,10 @@ to leave as-is for local dev.
 - [x] Full pipeline orchestration (`cmd/process`) — runs ingest → Stage A → windowing (`chunk.SplitIntoWindows`) → Stage B → question gen → breakdown gen → `internal/db` for every book in the catalog, with per-chunk failure handling and a `-dry-run` mode; not yet run for real (`-dry-run` against The Vampyre: 17 windows, ~195 chunks, ~407 real API calls, ~$2.47 estimated)
 - [x] Flutter app: mock vertical slice of the full core loop, verified running natively on macOS
 - [x] Run `cmd/process` for real against The Vampyre — the full book, not just a test batch (estimated cost ~$5)
+- [x] Content-serving REST API (`book-content/`) — a separate Go module, read-only, serving book/chunk/question/breakdown as JSON over `/aidoku/...`, filtered to published books; connection plumbing shared with the pipeline via a third module (`shared/`) wired together with `go.work`. Smoke-tested end to end against the real Postgres data from The Vampyre (published manually via a one-off SQL update, since Publish tooling doesn't exist yet) — full book → chunk → question/breakdown chain, plus 404/400 error paths and graceful shutdown all verified against the running server.
+- [x] `book-content` added to `docker-compose.yml` (`book-content/Dockerfile`, multi-stage, built from the repo root since it resolves `shared/` via `go.work`) — `docker compose up -d` now brings up Postgres and the API together, `book-content` waiting on Postgres's healthcheck; verified with a real `docker compose up -d` / container-to-container request over the compose network, not just `go run` on the host.
 
 **Next up**
-- [ ] Content-serving backend (Go) — nothing reads the database back out yet
 - [ ] Wire real pipeline output into the Flutter app, replacing the hand-authored mock content
 - [ ] Chapter boundary detection (deliberately deferred to the chunk-grouping stage — see design doc §7)
 - [ ] Pick a real product name (see the working-name note above)

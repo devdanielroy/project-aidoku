@@ -1,8 +1,6 @@
-# Local development Postgres for Aidoku. Not for production use — no
-# backend/storage-layer code exists yet (see README Milestones); this is
-# purely so pipeline output (chunks, questions, breakdowns) survives
-# between dev sessions instead of living only in memory or throwaway
-# JSON files.
+# Local development for Aidoku: Postgres, plus the content-serving REST
+# API (book-content/) that reads from it. Not for production use — see
+# README Milestones for what's actually built vs. designed.
 #
 # `docker compose up -d` on first run creates the "aidoku_pgdata" named
 # volume and applies db/schema.sql automatically (Postgres only runs
@@ -29,6 +27,33 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # The Flutter app's backend — read-only, serves book/chunk/question/
+  # breakdown as JSON over /aidoku/... (see book-content/internal/api).
+  # Build context is the repo root, not book-content/, because this
+  # module resolves aidoku/shared via go.work — see
+  # book-content/Dockerfile's own comment.
+  book-content:
+    build:
+      context: .
+      dockerfile: book-content/Dockerfile
+    restart: unless-stopped
+    environment:
+      # POSTGRES_HOST/PORT deliberately don't reuse the host-facing
+      # POSTGRES_PORT var above — inside the compose network this
+      # container reaches postgres by service name on its *container*
+      # port (always 5432), regardless of whatever host port that
+      # service happens to publish to.
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-aidoku}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aidoku_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-aidoku}
+    ports:
+      - "${BOOK_CONTENT_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   aidoku_pgdata:
