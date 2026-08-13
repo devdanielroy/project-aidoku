@@ -14,6 +14,16 @@
 // "published"; that's stage 5 (QA pass) and stage 6 (Publish), both
 // still manual/not built.
 //
+// Persistence is incremental, not batched: each window's chunks are
+// saved to Postgres the moment that window's Stage B call succeeds
+// (groupAllChunks), and each chunk's questions/breakdown are saved the
+// moment they're generated (the loop below) — both upsert on the same
+// row, so a chunk saved grouping-only is simply filled in once its
+// questions/breakdown arrive. A crash, interruption, or an
+// intentionally-stopped run partway through a book loses no
+// already-paid-for work; see the pipeline-incremental-persistence
+// memory this was built from.
+//
 // A chunk that fails question or breakdown generation after retrying is
 // logged to stderr and skipped, not treated as fatal — matching
 // cmd/ingest's "continue past a single failure" stance, extended to
@@ -148,17 +158,17 @@ func processBook(ctx context.Context, entry catalog.Entry, ingestClient *ingest.
 		return nil
 	}
 
-	allChunks, err := groupAllChunks(ctx, client, windows)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("  -> %d chunk(s) total\n", len(allChunks))
-
 	book := db.NewBookFromEntry(entry)
 	bookID, err := store.UpsertBook(ctx, book)
 	if err != nil {
 		return fmt.Errorf("save book: %w", err)
 	}
+
+	allChunks, err := groupAllChunks(ctx, client, store, bookID, windows)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("  -> %d chunk(s) total\n", len(allChunks))
 
 	questionGen := question.NewGenerator(client)
 	breakdownGen := breakdown.NewGenerator(client)
@@ -205,7 +215,17 @@ func processBook(ctx context.Context, entry catalog.Entry, ingestClient *ingest.
 // each window's chunk_index starts back at 0 (see
 // chunk.ValidatePartition), so indices are renumbered sequentially
 // across windows here.
-func groupAllChunks(ctx context.Context, client *anthropic.Client, windows [][]types.SentenceInput) ([]types.Chunk, error) {
+//
+// Each window's chunks are persisted (via store.SaveChunk, no
+// questions yet) immediately after that window's Stage B call
+// succeeds, before moving on to the next window. That real API call is
+// paid for the moment it returns — if a later window fails, or the
+// process is interrupted, or the run stops for the night, every window
+// already grouped stays in Postgres rather than only in allChunks'
+// memory. Questions arrive later per chunk (see processBook's loop),
+// which upserts the same row again via SaveChunk — see
+// pipeline-incremental-persistence.
+func groupAllChunks(ctx context.Context, client *anthropic.Client, store *db.Store, bookID int, windows [][]types.SentenceInput) ([]types.Chunk, error) {
 	grouper := chunk.NewGrouper(client)
 	var allChunks []types.Chunk
 	nextIndex := 0
@@ -219,6 +239,11 @@ func groupAllChunks(ctx context.Context, client *anthropic.Client, windows [][]t
 		for j := range windowChunks {
 			windowChunks[j].Index = nextIndex
 			nextIndex++
+		}
+		for _, c := range windowChunks {
+			if _, err := store.SaveChunk(ctx, bookID, c, nil); err != nil {
+				return nil, fmt.Errorf("save chunk %d (window %d): %w", c.Index, i, err)
+			}
 		}
 		allChunks = append(allChunks, windowChunks...)
 	}
