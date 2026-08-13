@@ -61,6 +61,15 @@ const chunk101CorrectAnswers = [
   'a common assumption about wealthy single men',
 ];
 
+/// Same as [chunk101CorrectAnswers], for chunk 103 (the last of the 3
+/// test chunks) — used to drive a full chunk completion in tests that
+/// need to reach the "book finished" state (see resume_test.dart).
+const chunk103CorrectAnswers = [
+  'unhappy/dissatisfied',
+  'past simple (passive-like adjective use)',
+  'imagines herself nervous',
+];
+
 const _questionsByChunk = {
   101: [
     {

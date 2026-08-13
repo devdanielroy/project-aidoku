@@ -13,15 +13,18 @@ import 'package:aidoku/data/book_content_repository.dart';
 import 'package:aidoku/screens/library_screen.dart';
 
 import 'fixtures/fake_book_content.dart';
+import 'fixtures/fake_progress_store.dart';
 
 void main() {
   testWidgets(
     'full core loop: read -> answer 3 questions -> breakdown -> next chunk',
     (WidgetTester tester) async {
+      final progressStore = FakeProgressStore();
       await tester.pumpWidget(
         MaterialApp(
           home: LibraryScreen(
             repository: BookContentRepository(client: fakeBookContentClient()),
+            progressStore: progressStore,
           ),
         ),
       );
@@ -74,6 +77,11 @@ void main() {
 
       // Back to reading phase, now on chunk 2.
       expect(find.text('CHUNK 2 OF 3'), findsOneWidget);
+
+      // Progress was saved on advancing — see progress_store_test.dart
+      // for saveChunkIndex/getChunkIndex/clearProgress in isolation;
+      // this just confirms ReadingSessionScreen actually calls it.
+      expect(await progressStore.getChunkIndex(1), 1);
     },
   );
 }

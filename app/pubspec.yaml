@@ -39,6 +39,11 @@ dependencies:
   # book-content service (see /book-content at the repo root).
   http: ^1.6.0
 
+  # Device-local storage for LocalProgressStore (see lib/data/) — where
+  # is the reader's current chunk saved before there's a real user
+  # account to hang it off. Officially maintained by the Flutter team.
+  shared_preferences: ^2.3.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

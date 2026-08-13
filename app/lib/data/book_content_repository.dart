@@ -39,9 +39,7 @@ class BookContentRepository {
   Future<List<Book>> getBooks() async {
     final json = await _getJson('/aidoku/books');
     final books = json['books'] as List;
-    return books
-        .map((b) => Book.fromJson(b as Map<String, dynamic>))
-        .toList();
+    return books.map((b) => Book.fromJson(b as Map<String, dynamic>)).toList();
   }
 
   Future<Book> getBook(int bookId) async {

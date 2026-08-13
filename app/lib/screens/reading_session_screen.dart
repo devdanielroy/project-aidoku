@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/book_content_repository.dart';
+import '../data/progress_store.dart';
 import '../models/book.dart';
 import '../models/loaded_chunk.dart';
 import 'session/chunk_panel.dart';
@@ -8,10 +9,11 @@ import 'session/complete_view.dart';
 
 /// Owns the whole reading session for one book: which chunk we're on,
 /// fetching each chunk's full content (text + questions + breakdown) as
-/// the reader reaches it, and whether the book is complete. The
-/// per-chunk loop itself — reading, questions, breakdown — is delegated
-/// to ChunkPanel (see its doc comment); this screen only needs to know
-/// the current chunk's id, fetch its content, and know when to advance.
+/// the reader reaches it, resuming/saving progress via [progressStore],
+/// and whether the book is complete. The per-chunk loop itself —
+/// reading, questions, breakdown — is delegated to ChunkPanel (see its
+/// doc comment); this screen only needs to know the current chunk's id,
+/// fetch its content, and know when to advance.
 ///
 /// Chunk ids are fetched once up front (GET .../chunks — cheap, ids
 /// only); each chunk's actual content is fetched lazily, one at a time,
@@ -20,11 +22,13 @@ import 'session/complete_view.dart';
 class ReadingSessionScreen extends StatefulWidget {
   final Book book;
   final BookContentRepository repository;
+  final ProgressStore progressStore;
 
   const ReadingSessionScreen({
     super.key,
     required this.book,
     required this.repository,
+    required this.progressStore,
   });
 
   @override
@@ -43,22 +47,34 @@ class _ReadingSessionScreenState extends State<ReadingSessionScreen> {
   void initState() {
     super.initState();
     _chunkIdsFuture = widget.repository.getChunkIds(widget.book.id);
-    // Kick off the first chunk's content fetch the moment the id list
-    // arrives, rather than waiting for a rebuild to notice — .catchError
-    // here just stops this specific listener from surfacing an "unhandled
-    // exception" warning; the FutureBuilder below watches the same
-    // _chunkIdsFuture independently and is what actually shows the error.
-    _chunkIdsFuture
-        .then((ids) {
-          if (!mounted) return;
-          setState(() {
-            _chunkIds = ids;
-            if (ids.isNotEmpty) {
-              _currentChunkFuture = widget.repository.loadChunk(ids[0]);
-            }
-          });
-        })
-        .catchError((_) {});
+    // try/catch here just stops this specific listener from surfacing an
+    // "unhandled exception" warning; the FutureBuilder below awaits the
+    // same _chunkIdsFuture independently and is what actually shows the
+    // error.
+    _loadInitialChunk();
+  }
+
+  Future<void> _loadInitialChunk() async {
+    try {
+      final ids = await _chunkIdsFuture;
+      if (!mounted || ids.isEmpty) return;
+      // Resume where the reader left off, if anywhere — a saved index
+      // past the end (the book got shorter somehow, or it's stale) just
+      // falls back to the start rather than crashing on a bad list
+      // index.
+      final saved = await widget.progressStore.getChunkIndex(widget.book.id);
+      if (!mounted) return;
+      final startIndex = (saved != null && saved >= 0 && saved < ids.length)
+          ? saved
+          : 0;
+      setState(() {
+        _chunkIds = ids;
+        _chunkIndex = startIndex;
+        _currentChunkFuture = widget.repository.loadChunk(ids[startIndex]);
+      });
+    } catch (_) {
+      // Swallowed deliberately — see this method's call site.
+    }
   }
 
   double get _progress {
@@ -69,18 +85,21 @@ class _ReadingSessionScreenState extends State<ReadingSessionScreen> {
 
   void _onChunkComplete() {
     if (_chunkIndex + 1 < _chunkIds.length) {
+      final nextIndex = _chunkIndex + 1;
+      widget.progressStore.saveChunkIndex(widget.book.id, nextIndex);
       setState(() {
-        _chunkIndex++;
-        _currentChunkFuture = widget.repository.loadChunk(
-          _chunkIds[_chunkIndex],
-        );
+        _chunkIndex = nextIndex;
+        _currentChunkFuture = widget.repository.loadChunk(_chunkIds[nextIndex]);
       });
     } else {
+      // Nothing left to resume — see ProgressStore.clearProgress.
+      widget.progressStore.clearProgress(widget.book.id);
       setState(() => _complete = true);
     }
   }
 
   void _onRestart() {
+    widget.progressStore.saveChunkIndex(widget.book.id, 0);
     setState(() {
       _chunkIndex = 0;
       _complete = false;
