@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../models/chunk.dart';
 
-/// Step 1 of the core loop (AIDOKU_DESIGN.md §2): show the chunk text and
-/// nothing else — no dictionary, no hints, no translation. The reader has
-/// to get through this unassisted before any help is offered; the
-/// friction is the pedagogy, not a UX flaw to smooth away.
+/// Step 1 of the core loop (AIDOKU_DESIGN.md §2): show the chunk text,
+/// read unassisted before any help — questions, then breakdown — is
+/// offered.
 class ReadingView extends StatelessWidget {
   final Chunk chunk;
   final int chunkNumber;

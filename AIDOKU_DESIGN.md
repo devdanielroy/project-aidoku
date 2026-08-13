@@ -12,7 +12,7 @@ A language-learning app that teaches through literature instead of graded textbo
 
 1. User picks a book, filtered/tagged by rough difficulty level (self-selected, not tested).
 2. App serves the next chunk of that book (~240 characters ± 60, English; boundary-aware — never mid-sentence/clause if avoidable).
-3. User reads the chunk unassisted. No dictionary, no hints, no translation visible.
+3. User reads the chunk unassisted.
 4. User answers 3 questions tied to that chunk:
    - **Vocabulary** — a keyword or notable word from the chunk.
    - **Grammar** — a grammar pattern/structure used in the chunk.
