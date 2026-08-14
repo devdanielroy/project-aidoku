@@ -11,6 +11,23 @@ breakdown before moving on. v1 targets Japanese speakers learning English.
 
 See [AIDOKU_DESIGN.md](./AIDOKU_DESIGN.md) for the full design plan.
 
+## Screenshots
+
+**Library**
+![Aidoku 01](docs/images/Aidoku_01.png)
+**Reading**
+![Aidoku 02](docs/images/Aidoku_02.png)
+**Vocab Question**
+![Aidoku 03](docs/images/Aidoku_03.png)
+**Grammar Question**
+![Aidoku 04](docs/images/Aidoku_04.png)
+**Comprehension Question**
+![Aidoku 05](docs/images/Aidoku_05.png)
+**Full Breakdown**
+![Aidoku 06](docs/images/Aidoku_06.png)
+
+(Screenshots taken on 14/08/2026)
+
 ## Architecture
 
 What exists today, end to end, plus what's planned next — plain solid
