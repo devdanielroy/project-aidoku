@@ -29,6 +29,12 @@ class ChunkPanel extends StatefulWidget {
   final bool isLastChunk;
   final VoidCallback onChunkComplete;
 
+  /// Forwarded straight to QuestionsView — see its own doc comment.
+  final void Function(Question question, bool correct)? onAnswered;
+
+  /// Forwarded straight to QuestionsView — see its own doc comment.
+  final bool startAnswered;
+
   const ChunkPanel({
     super.key,
     required this.loadedChunk,
@@ -36,6 +42,8 @@ class ChunkPanel extends StatefulWidget {
     required this.totalChunks,
     required this.isLastChunk,
     required this.onChunkComplete,
+    this.onAnswered,
+    this.startAnswered = false,
   });
 
   @override
@@ -138,6 +146,8 @@ class _ChunkPanelState extends State<ChunkPanel> {
                                 questions: widget.loadedChunk.questions,
                                 onComplete: _revealBreakdown,
                                 onQuestionChanged: _onActiveQuestionChanged,
+                                onAnswered: widget.onAnswered,
+                                startAnswered: widget.startAnswered,
                               ),
                       ),
                     ),

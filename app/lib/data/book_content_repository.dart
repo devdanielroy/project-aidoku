@@ -6,6 +6,7 @@ import '../config.dart';
 import '../models/book.dart';
 import '../models/breakdown.dart';
 import '../models/chunk.dart';
+import '../models/chunk_summary.dart';
 import '../models/loaded_chunk.dart';
 import '../models/question.dart';
 
@@ -56,6 +57,17 @@ class BookContentRepository {
 
   Future<Chunk> getChunk(int chunkId) async {
     return Chunk.fromJson(await _getJson('/aidoku/chunk/$chunkId'));
+  }
+
+  /// Teasers for every chunk in bookID, in reading order — for the chunk
+  /// review list (see ChunkListScreen), which needs something to show
+  /// per row without fetching every chunk's full text just for that.
+  Future<List<ChunkSummary>> getChunkSummaries(int bookId) async {
+    final json = await _getJson('/aidoku/book/$bookId/chunks/summary');
+    final chunks = json['chunks'] as List;
+    return chunks
+        .map((c) => ChunkSummary.fromJson(c as Map<String, dynamic>))
+        .toList();
   }
 
   Future<List<int>> getQuestionIds(int chunkId) async {

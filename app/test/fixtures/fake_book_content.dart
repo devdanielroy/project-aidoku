@@ -227,6 +227,23 @@ http.Client fakeBookContentClient() {
     if (RegExp(r'^/aidoku/book/\d+/chunks$').hasMatch(path)) {
       return _ok({'chunk_ids': testChunks.map((c) => c['id']).toList()});
     }
+    if (RegExp(r'^/aidoku/book/\d+/chunks/summary$').hasMatch(path)) {
+      return _ok({
+        'chunks': testChunks
+            .map(
+              (c) => {
+                'id': c['id'],
+                'index': c['index'],
+                // Real previews are server-truncated to the first
+                // sentence (see book-content's firstSentencePreview) -
+                // the fixture doesn't bother replicating that logic,
+                // just returns the whole (short) test chunk text as-is.
+                'preview': c['text'],
+              },
+            )
+            .toList(),
+      });
+    }
     final chunkMatch = RegExp(r'^/aidoku/chunk/(\d+)$').firstMatch(path);
     if (chunkMatch != null) {
       final id = int.parse(chunkMatch.group(1)!);

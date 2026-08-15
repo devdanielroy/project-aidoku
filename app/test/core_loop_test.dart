@@ -14,17 +14,20 @@ import 'package:aidoku/screens/library_screen.dart';
 
 import 'fixtures/fake_book_content.dart';
 import 'fixtures/fake_progress_store.dart';
+import 'fixtures/fake_score_store.dart';
 
 void main() {
   testWidgets(
     'full core loop: read -> answer 3 questions -> breakdown -> next chunk',
     (WidgetTester tester) async {
       final progressStore = FakeProgressStore();
+      final scoreStore = FakeScoreStore();
       await tester.pumpWidget(
         MaterialApp(
           home: LibraryScreen(
             repository: BookContentRepository(client: fakeBookContentClient()),
             progressStore: progressStore,
+            scoreStore: scoreStore,
           ),
         ),
       );
@@ -82,6 +85,14 @@ void main() {
       // for saveChunkIndex/getChunkIndex/clearProgress in isolation;
       // this just confirms ReadingSessionScreen actually calls it.
       expect(await progressStore.getChunkIndex(1), 1);
+
+      // All 3 questions were answered correctly (we tapped the known
+      // correct option each time) and recorded — see ScoreStore. Keyed
+      // by question id, not by position, so this also confirms
+      // QuestionsView passed the right Question through to onAnswered.
+      final answers = await scoreStore.getAnswers(1);
+      expect(answers.values, everyElement(isTrue));
+      expect(answers.length, 3);
     },
   );
 }

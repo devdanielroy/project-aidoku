@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -189,6 +190,46 @@ func TestListChunkIDs_EmptyForUnpublishedBook(t *testing.T) {
 	}
 }
 
+func TestListChunkSummaries_OrderedByIndexWithPreviews(t *testing.T) {
+	store, tx, ctx := openTestStore(t)
+
+	bookID := insertBook(t, tx, ctx, 810016, "published")
+	second := insertChunk(t, tx, ctx, bookID, 1, "Second chunk. More text after.")
+	first := insertChunk(t, tx, ctx, bookID, 0, "First chunk. More text after.")
+
+	summaries, err := store.ListChunkSummaries(ctx, bookID)
+	if err != nil {
+		t.Fatalf("ListChunkSummaries: %v", err)
+	}
+	want := []int{first, second}
+	if len(summaries) != len(want) {
+		t.Fatalf("ListChunkSummaries = %+v, want %d summaries", summaries, len(want))
+	}
+	for i, id := range want {
+		if summaries[i].ID != id {
+			t.Errorf("ListChunkSummaries[%d].ID = %d, want %d (chunk index order)", i, summaries[i].ID, id)
+		}
+	}
+	if summaries[0].Preview != "First chunk." {
+		t.Errorf("ListChunkSummaries[0].Preview = %q, want %q", summaries[0].Preview, "First chunk.")
+	}
+}
+
+func TestListChunkSummaries_EmptyForUnpublishedBook(t *testing.T) {
+	store, tx, ctx := openTestStore(t)
+
+	bookID := insertBook(t, tx, ctx, 810017, "processing")
+	insertChunk(t, tx, ctx, bookID, 0, "text")
+
+	summaries, err := store.ListChunkSummaries(ctx, bookID)
+	if err != nil {
+		t.Fatalf("ListChunkSummaries: %v", err)
+	}
+	if len(summaries) != 0 {
+		t.Errorf("ListChunkSummaries on an unpublished book = %v, want empty", summaries)
+	}
+}
+
 func TestGetChunk_NotFoundForUnpublishedBook(t *testing.T) {
 	store, tx, ctx := openTestStore(t)
 
@@ -297,5 +338,49 @@ func TestGetBreakdown_NotFoundWhenMissing(t *testing.T) {
 
 	if _, err := store.GetBreakdown(ctx, chunkID); err != ErrNotFound {
 		t.Errorf("GetBreakdown with no breakdown row: got %v, want ErrNotFound", err)
+	}
+}
+
+// firstSentencePreview doesn't touch Postgres — plain unit tests, no
+// openTestStore/skip needed.
+func TestFirstSentencePreview(t *testing.T) {
+	longWordRun := strings.Repeat("a", 200) // no spaces, no punctuation
+
+	cases := []struct {
+		name string
+		text string
+		want string
+	}{
+		{
+			name: "short first sentence returned whole, including punctuation",
+			text: "It was a dark night. Something else happened next.",
+			want: "It was a dark night.",
+		},
+		{
+			name: "no punctuation at all falls back to a word-boundary truncation",
+			// 100 a's + a space + 49 b's = 150 chars, no . ! ? anywhere.
+			// Truncating to 140 chars lands inside the run of b's; the
+			// word-boundary rule pulls it back to the space at index 100.
+			text: strings.Repeat("a", 100) + " " + strings.Repeat("b", 49),
+			want: strings.Repeat("a", 100) + "…",
+		},
+		{
+			name: "first sentence longer than maxLen falls back to truncation, not a huge preview",
+			text: longWordRun + ".",
+			want: longWordRun[:140] + "…",
+		},
+		{
+			name: "text shorter than maxLen with no punctuation is returned whole",
+			text: "short text",
+			want: "short text",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := firstSentencePreview(tc.text, 140)
+			if got != tc.want {
+				t.Errorf("firstSentencePreview(%.20q..., 140) = %q, want %q", tc.text, got, tc.want)
+			}
+		})
 	}
 }

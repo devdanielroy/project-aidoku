@@ -7,12 +7,22 @@ import '../../models/book.dart';
 class CompleteView extends StatelessWidget {
   final Book book;
   final int totalChunks;
+
+  /// Cumulative question score across the whole book — see ScoreStore.
+  /// [totalAnswers] is 0 (not null) while still loading or if somehow
+  /// nothing was recorded, in which case the score line is just omitted
+  /// rather than shown as "0/0".
+  final int correctAnswers;
+  final int totalAnswers;
+
   final VoidCallback onRestart;
 
   const CompleteView({
     super.key,
     required this.book,
     required this.totalChunks,
+    required this.correctAnswers,
+    required this.totalAnswers,
     required this.onRestart,
   });
 
@@ -40,6 +50,17 @@ class CompleteView extends StatelessWidget {
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
+            if (totalAnswers > 0) ...[
+              const SizedBox(height: 4),
+              Text(
+                '$correctAnswers/$totalAnswers questions correct '
+                '(${(100 * correctAnswers / totalAnswers).round()}%).',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             OutlinedButton(
               onPressed: onRestart,

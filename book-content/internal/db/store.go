@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -39,6 +40,17 @@ type Chunk struct {
 	Index     int    `json:"index"`
 	Text      string `json:"text"`
 	CharCount int    `json:"char_count"`
+}
+
+// ChunkSummary is the read-shaped response for one row of a book's chunk
+// review list (see ListChunkSummaries) — enough to render a teaser
+// without shipping the chunk's full text, which a book-length list of
+// these would make expensive for no reason (the reader isn't reading
+// the passage from this view, just picking a chunk to revisit).
+type ChunkSummary struct {
+	ID      int    `json:"id"`
+	Index   int    `json:"index"`
+	Preview string `json:"preview"`
 }
 
 // Question is the read-shaped response for one question. Highlight is a
@@ -145,6 +157,71 @@ func (s *Store) ListChunkIDs(ctx context.Context, bookID int) ([]int, error) {
 		return nil, fmt.Errorf("db: ListChunkIDs: %w", err)
 	}
 	return ids, nil
+}
+
+// previewMaxLen bounds ChunkSummary.Preview — long enough to fit a
+// typical single sentence whole (see firstSentencePreview), short
+// enough that a book-length list of summaries stays cheap.
+const previewMaxLen = 140
+
+// ListChunkSummaries returns a teaser for every chunk in bookID, in
+// reading order — for the Flutter app's chunk review list (pick a
+// previously-cleared chunk to redo), which needs something to show per
+// row without fetching every chunk's full text just to display one
+// line of it. See ChunkSummary and firstSentencePreview.
+func (s *Store) ListChunkSummaries(ctx context.Context, bookID int) ([]ChunkSummary, error) {
+	const q = `
+		SELECT c.id, c.index, c.text
+		FROM chunk c
+		JOIN book b ON b.id = c.book_id
+		WHERE c.book_id = $1 AND b.status = 'published'
+		ORDER BY c.index`
+
+	rows, err := s.db.Query(ctx, q, bookID)
+	if err != nil {
+		return nil, fmt.Errorf("db: ListChunkSummaries: %w", err)
+	}
+	defer rows.Close()
+
+	var summaries []ChunkSummary
+	for rows.Next() {
+		var (
+			id, index int
+			text      string
+		)
+		if err := rows.Scan(&id, &index, &text); err != nil {
+			return nil, fmt.Errorf("db: ListChunkSummaries: scan: %w", err)
+		}
+		summaries = append(summaries, ChunkSummary{
+			ID:      id,
+			Index:   index,
+			Preview: firstSentencePreview(text, previewMaxLen),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: ListChunkSummaries: %w", err)
+	}
+	return summaries, nil
+}
+
+// firstSentencePreview extracts a short teaser from text: up to and
+// including its first sentence-ending punctuation (. ! ?) if that falls
+// within maxLen, otherwise text truncated to the nearest word boundary
+// at or before maxLen with "…" appended. ASCII punctuation only — chunk
+// text is Project Gutenberg English prose (see pipeline/internal/clean),
+// so this doesn't need to handle Japanese sentence punctuation.
+func firstSentencePreview(text string, maxLen int) string {
+	if idx := strings.IndexAny(text, ".!?"); idx >= 0 && idx <= maxLen {
+		return strings.TrimSpace(text[:idx+1])
+	}
+	if len(text) <= maxLen {
+		return strings.TrimSpace(text)
+	}
+	truncated := text[:maxLen]
+	if sp := strings.LastIndexByte(truncated, ' '); sp > 0 {
+		truncated = truncated[:sp]
+	}
+	return strings.TrimSpace(truncated) + "…"
 }
 
 // GetChunk returns chunkID's full content, as long as its book is

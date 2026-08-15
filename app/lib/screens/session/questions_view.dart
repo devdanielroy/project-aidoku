@@ -20,11 +20,26 @@ class QuestionsView extends StatefulWidget {
   /// this view re-quoting it.
   final ValueChanged<Question>? onQuestionChanged;
 
+  /// Called once a question is answered, with whether it was correct —
+  /// see ScoreStore. Null in contexts that don't track score (there are
+  /// none yet, but this mirrors onQuestionChanged's optionality).
+  final void Function(Question question, bool correct)? onAnswered;
+
+  /// True when reviewing a chunk that was already fully passed (see
+  /// ChunkReviewSessionScreen) — every question starts pre-selected on
+  /// its correct option instead of neutral, so the reader sees what
+  /// they got right without being asked to redo it. [onAnswered] is
+  /// never called for a pre-filled selection (nothing was actually
+  /// re-answered, so there's nothing new for ScoreStore to record).
+  final bool startAnswered;
+
   const QuestionsView({
     super.key,
     required this.questions,
     required this.onComplete,
     this.onQuestionChanged,
+    this.onAnswered,
+    this.startAnswered = false,
   });
 
   @override
@@ -53,6 +68,9 @@ class _QuestionsViewState extends State<QuestionsView> {
   void initState() {
     super.initState();
     _displayOrder = _shuffledIndices(_question.options.length);
+    if (widget.startAnswered) {
+      _selectedOption = _displayOrder.indexOf(_question.answerIndex);
+    }
     // Deferred to after the first frame: calling widget.onQuestionChanged
     // synchronously here could trigger setState on an ancestor that's
     // still mid-build (this widget is being built as part of it).
@@ -67,6 +85,8 @@ class _QuestionsViewState extends State<QuestionsView> {
   void _selectOption(int displayIndex) {
     if (_selectedOption != null) return; // already answered — locked in
     setState(() => _selectedOption = displayIndex);
+    final correct = _displayOrder[displayIndex] == _question.answerIndex;
+    widget.onAnswered?.call(_question, correct);
   }
 
   void _advance() {
@@ -76,8 +96,10 @@ class _QuestionsViewState extends State<QuestionsView> {
     }
     setState(() {
       _questionIndex++;
-      _selectedOption = null;
       _displayOrder = _shuffledIndices(_question.options.length);
+      _selectedOption = widget.startAnswered
+          ? _displayOrder.indexOf(_question.answerIndex)
+          : null;
     });
     widget.onQuestionChanged?.call(_question);
   }

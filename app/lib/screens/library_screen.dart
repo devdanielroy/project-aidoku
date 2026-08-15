@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../data/book_content_repository.dart';
 import '../data/local_progress_store.dart';
+import '../data/local_score_store.dart';
 import '../data/progress_store.dart';
+import '../data/score_store.dart';
 import '../models/book.dart';
 import 'reading_session_screen.dart';
 
@@ -22,7 +24,17 @@ class LibraryScreen extends StatefulWidget {
   /// doc comment for why this is an interface at all.
   final ProgressStore? progressStore;
 
-  const LibraryScreen({super.key, this.repository, this.progressStore});
+  /// Overridable for tests (an in-memory fake — see test/fixtures/) —
+  /// defaults to this device's local storage. See ScoreStore's own doc
+  /// comment for why this is a separate interface from ProgressStore.
+  final ScoreStore? scoreStore;
+
+  const LibraryScreen({
+    super.key,
+    this.repository,
+    this.progressStore,
+    this.scoreStore,
+  });
 
   @override
   State<LibraryScreen> createState() => _LibraryScreenState();
@@ -33,6 +45,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       widget.repository ?? BookContentRepository();
   late final ProgressStore _progressStore =
       widget.progressStore ?? LocalProgressStore();
+  late final ScoreStore _scoreStore = widget.scoreStore ?? LocalScoreStore();
   late final Future<List<Book>> _booksFuture = _repository.getBooks();
 
   @override
@@ -62,6 +75,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               book: books[i],
               repository: _repository,
               progressStore: _progressStore,
+              scoreStore: _scoreStore,
             ),
           );
         },
@@ -76,15 +90,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
 /// no behavior, doesn't escape this file.
 typedef _BookProgress = ({int index, int total});
 
+/// [correct] out of [total] questions answered so far in this book — a
+/// record rather than a class for the same reason as _BookProgress.
+typedef _ScoreSummary = ({int correct, int total});
+
 class _BookCard extends StatefulWidget {
   final Book book;
   final BookContentRepository repository;
   final ProgressStore progressStore;
+  final ScoreStore scoreStore;
 
   const _BookCard({
     required this.book,
     required this.repository,
     required this.progressStore,
+    required this.scoreStore,
   });
 
   @override
@@ -92,11 +112,24 @@ class _BookCard extends StatefulWidget {
 }
 
 class _BookCardState extends State<_BookCard> {
-  // Cached rather than looked up inline in build() — a FutureBuilder
-  // whose `future:` is a fresh call on every build re-triggers on every
-  // rebuild (e.g. a scroll), not just once. Matches how the books list
-  // itself is cached in _LibraryScreenState.
-  late final Future<_BookProgress?> _progressFuture = _loadProgress();
+  // Not `late final` — a FutureBuilder whose `future:` is a fresh call
+  // on every build re-triggers on every rebuild (e.g. a scroll), so
+  // these are still only computed once per State instance, same as the
+  // books list itself in _LibraryScreenState. But this State instance
+  // is never recreated just by navigating to ReadingSessionScreen and
+  // back (the card was only covered, not removed), so without
+  // reassigning them in _openBook once that pop happens, a chunk
+  // cleared or a question answered during that visit would never show
+  // up here — see ChunkListScreen's _rowsFuture for the same fix.
+  late Future<_BookProgress?> _progressFuture;
+  late Future<_ScoreSummary?> _scoreFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _progressFuture = _loadProgress();
+    _scoreFuture = _loadScore();
+  }
 
   // The chunk-id-count fetch (needed for the "of M" / fraction) only
   // happens for books that actually have saved progress — a book never
@@ -111,21 +144,46 @@ class _BookCardState extends State<_BookCard> {
     return (index: savedIndex, total: chunkIds.length);
   }
 
+  // Null until at least one question in this book has been answered —
+  // a book that's only been read so far (no questions yet) shows a
+  // progress bar but no accuracy line.
+  Future<_ScoreSummary?> _loadScore() async {
+    final answers = await widget.scoreStore.getAnswers(widget.book.id);
+    if (answers.isEmpty) return null;
+    return (
+      correct: answers.values.where((c) => c).length,
+      total: answers.length,
+    );
+  }
+
+  Future<void> _openBook() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ReadingSessionScreen(
+          book: widget.book,
+          repository: widget.repository,
+          progressStore: widget.progressStore,
+          scoreStore: widget.scoreStore,
+        ),
+      ),
+    );
+    // Refresh regardless of how the reader left — finished the book,
+    // backed out mid-chunk, whatever — see _progressFuture's doc
+    // comment.
+    if (!mounted) return;
+    setState(() {
+      _progressFuture = _loadProgress();
+      _scoreFuture = _loadScore();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => ReadingSessionScreen(
-              book: widget.book,
-              repository: widget.repository,
-              progressStore: widget.progressStore,
-            ),
-          ),
-        ),
+        onTap: _openBook,
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -181,6 +239,23 @@ class _BookCardState extends State<_BookCard> {
                           ),
                         ),
                       ],
+                    ),
+                  );
+                },
+              ),
+              FutureBuilder<_ScoreSummary?>(
+                future: _scoreFuture,
+                builder: (context, snapshot) {
+                  final score = snapshot.data;
+                  if (score == null) return const SizedBox.shrink();
+                  final percent = (100 * score.correct / score.total).round();
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Accuracy: $percent% (${score.correct}/${score.total})',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   );
                 },

@@ -30,6 +30,7 @@ type Store interface {
 	ListBooks(ctx context.Context) ([]db.Book, error)
 	GetBook(ctx context.Context, bookID int) (db.Book, error)
 	ListChunkIDs(ctx context.Context, bookID int) ([]int, error)
+	ListChunkSummaries(ctx context.Context, bookID int) ([]db.ChunkSummary, error)
 	GetChunk(ctx context.Context, chunkID int) (db.Chunk, error)
 	ListQuestionIDs(ctx context.Context, chunkID int) ([]int, error)
 	GetQuestion(ctx context.Context, questionID int) (db.Question, error)
@@ -49,6 +50,7 @@ func NewRouter(store Store) *http.ServeMux {
 	mux.HandleFunc("GET /aidoku/books", h.listBooks)
 	mux.HandleFunc("GET /aidoku/book/{book_id}", h.getBook)
 	mux.HandleFunc("GET /aidoku/book/{book_id}/chunks", h.listChunkIDs)
+	mux.HandleFunc("GET /aidoku/book/{book_id}/chunks/summary", h.listChunkSummaries)
 	mux.HandleFunc("GET /aidoku/chunk/{chunk_id}", h.getChunk)
 	mux.HandleFunc("GET /aidoku/chunk/{chunk_id}/questions", h.listQuestionIDs)
 	mux.HandleFunc("GET /aidoku/question/{question_id}", h.getQuestion)
@@ -103,6 +105,22 @@ func (h *handler) listChunkIDs(w http.ResponseWriter, r *http.Request) {
 		ids = []int{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"chunk_ids": ids})
+}
+
+func (h *handler) listChunkSummaries(w http.ResponseWriter, r *http.Request) {
+	bookID, ok := pathInt(w, r, "book_id")
+	if !ok {
+		return
+	}
+	summaries, err := h.store.ListChunkSummaries(r.Context(), bookID)
+	if err != nil {
+		writeServerError(w, "listChunkSummaries", err)
+		return
+	}
+	if summaries == nil {
+		summaries = []db.ChunkSummary{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"chunks": summaries})
 }
 
 func (h *handler) getChunk(w http.ResponseWriter, r *http.Request) {

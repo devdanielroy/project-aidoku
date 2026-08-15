@@ -15,13 +15,14 @@ import (
 // calling an unset one panics (a nil func call), which fails the test
 // loudly rather than silently returning a zero value.
 type fakeStore struct {
-	listBooks       func(ctx context.Context) ([]db.Book, error)
-	getBook         func(ctx context.Context, bookID int) (db.Book, error)
-	listChunkIDs    func(ctx context.Context, bookID int) ([]int, error)
-	getChunk        func(ctx context.Context, chunkID int) (db.Chunk, error)
-	listQuestionIDs func(ctx context.Context, chunkID int) ([]int, error)
-	getQuestion     func(ctx context.Context, questionID int) (db.Question, error)
-	getBreakdown    func(ctx context.Context, chunkID int) (db.Breakdown, error)
+	listBooks          func(ctx context.Context) ([]db.Book, error)
+	getBook            func(ctx context.Context, bookID int) (db.Book, error)
+	listChunkIDs       func(ctx context.Context, bookID int) ([]int, error)
+	listChunkSummaries func(ctx context.Context, bookID int) ([]db.ChunkSummary, error)
+	getChunk           func(ctx context.Context, chunkID int) (db.Chunk, error)
+	listQuestionIDs    func(ctx context.Context, chunkID int) ([]int, error)
+	getQuestion        func(ctx context.Context, questionID int) (db.Question, error)
+	getBreakdown       func(ctx context.Context, chunkID int) (db.Breakdown, error)
 }
 
 func (f *fakeStore) ListBooks(ctx context.Context) ([]db.Book, error) { return f.listBooks(ctx) }
@@ -30,6 +31,9 @@ func (f *fakeStore) GetBook(ctx context.Context, bookID int) (db.Book, error) {
 }
 func (f *fakeStore) ListChunkIDs(ctx context.Context, bookID int) ([]int, error) {
 	return f.listChunkIDs(ctx, bookID)
+}
+func (f *fakeStore) ListChunkSummaries(ctx context.Context, bookID int) ([]db.ChunkSummary, error) {
+	return f.listChunkSummaries(ctx, bookID)
 }
 func (f *fakeStore) GetChunk(ctx context.Context, chunkID int) (db.Chunk, error) {
 	return f.getChunk(ctx, chunkID)
@@ -208,6 +212,44 @@ func TestListChunkIDs_WrapsInNamedField(t *testing.T) {
 	decodeJSON(t, rec, &body)
 	if len(body.ChunkIDs) != 3 {
 		t.Errorf("body.chunk_ids = %v, want [10 11 12]", body.ChunkIDs)
+	}
+}
+
+func TestListChunkSummaries_WrapsInNamedField(t *testing.T) {
+	store := &fakeStore{
+		listChunkSummaries: func(ctx context.Context, bookID int) ([]db.ChunkSummary, error) {
+			if bookID != 7 {
+				t.Errorf("ListChunkSummaries called with bookID=%d, want 7", bookID)
+			}
+			return []db.ChunkSummary{
+				{ID: 10, Index: 0, Preview: "It was a dark and stormy night."},
+			}, nil
+		},
+	}
+	rec := doRequest(t, NewRouter(store), "GET", "/aidoku/book/7/chunks/summary")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		Chunks []db.ChunkSummary `json:"chunks"`
+	}
+	decodeJSON(t, rec, &body)
+	if len(body.Chunks) != 1 || body.Chunks[0].Preview != "It was a dark and stormy night." {
+		t.Errorf("body.chunks = %+v, want one summary with that preview", body.Chunks)
+	}
+}
+
+func TestListChunkSummaries_EmptyIsAnEmptyArrayNotNull(t *testing.T) {
+	store := &fakeStore{
+		listChunkSummaries: func(ctx context.Context, bookID int) ([]db.ChunkSummary, error) {
+			return nil, nil
+		},
+	}
+	rec := doRequest(t, NewRouter(store), "GET", "/aidoku/book/7/chunks/summary")
+
+	if got := rec.Body.String(); !jsonHasEmptyArray(got, "chunks") {
+		t.Errorf("body = %s, want chunks: [] (not null)", got)
 	}
 }
 

@@ -14,6 +14,7 @@ import 'package:aidoku/screens/library_screen.dart';
 
 import 'fixtures/fake_book_content.dart';
 import 'fixtures/fake_progress_store.dart';
+import 'fixtures/fake_score_store.dart';
 
 void main() {
   testWidgets('resumes at the saved chunk instead of starting over', (
@@ -28,6 +29,7 @@ void main() {
         home: LibraryScreen(
           repository: BookContentRepository(client: fakeBookContentClient()),
           progressStore: progressStore,
+          scoreStore: FakeScoreStore(),
         ),
       ),
     );
@@ -53,6 +55,7 @@ void main() {
           home: LibraryScreen(
             repository: BookContentRepository(client: fakeBookContentClient()),
             progressStore: progressStore,
+            scoreStore: FakeScoreStore(),
           ),
         ),
       );
@@ -77,6 +80,7 @@ void main() {
         home: LibraryScreen(
           repository: BookContentRepository(client: fakeBookContentClient()),
           progressStore: progressStore,
+          scoreStore: FakeScoreStore(),
         ),
       ),
     );

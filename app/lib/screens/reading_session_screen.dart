@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../data/book_content_repository.dart';
 import '../data/progress_store.dart';
+import '../data/score_store.dart';
 import '../models/book.dart';
 import '../models/loaded_chunk.dart';
+import '../models/question.dart';
+import 'chunk_list_screen.dart';
 import 'session/chunk_panel.dart';
 import 'session/complete_view.dart';
 
@@ -23,12 +26,14 @@ class ReadingSessionScreen extends StatefulWidget {
   final Book book;
   final BookContentRepository repository;
   final ProgressStore progressStore;
+  final ScoreStore scoreStore;
 
   const ReadingSessionScreen({
     super.key,
     required this.book,
     required this.repository,
     required this.progressStore,
+    required this.scoreStore,
   });
 
   @override
@@ -42,6 +47,11 @@ class _ReadingSessionScreenState extends State<ReadingSessionScreen> {
   int _chunkIndex = 0;
   bool _complete = false;
   Future<LoadedChunk>? _currentChunkFuture;
+
+  // Kicked off the moment the book is finished (see _onChunkComplete)
+  // rather than inline in build() — a fresh call on every rebuild would
+  // re-fetch on every frame, same reasoning as _currentChunkFuture.
+  Future<Map<int, bool>>? _finalScoreFuture;
 
   @override
   void initState() {
@@ -94,12 +104,44 @@ class _ReadingSessionScreenState extends State<ReadingSessionScreen> {
     } else {
       // Nothing left to resume — see ProgressStore.clearProgress.
       widget.progressStore.clearProgress(widget.book.id);
-      setState(() => _complete = true);
+      final scoreFuture = widget.scoreStore.getAnswers(widget.book.id);
+      setState(() {
+        _complete = true;
+        _finalScoreFuture = scoreFuture;
+      });
     }
+  }
+
+  void _onAnswered(Question question, bool correct) {
+    widget.scoreStore.recordAnswer(
+      bookId: widget.book.id,
+      questionId: question.id,
+      correct: correct,
+    );
+  }
+
+  // Chunks strictly before the current one have been read, questioned,
+  // and broken down in full — see ChunkPanel. The chunk currently in
+  // progress doesn't count until it's actually finished, but once the
+  // whole book is _complete every chunk qualifies.
+  int get _clearedCount => _complete ? _chunkIds.length : _chunkIndex;
+
+  void _openReview() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChunkListScreen(
+          book: widget.book,
+          repository: widget.repository,
+          scoreStore: widget.scoreStore,
+          chunkIds: _chunkIds.sublist(0, _clearedCount),
+        ),
+      ),
+    );
   }
 
   void _onRestart() {
     widget.progressStore.saveChunkIndex(widget.book.id, 0);
+    widget.scoreStore.clearScore(widget.book.id);
     setState(() {
       _chunkIndex = 0;
       _complete = false;
@@ -112,6 +154,14 @@ class _ReadingSessionScreenState extends State<ReadingSessionScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.book.title),
+        actions: [
+          if (_clearedCount > 0)
+            IconButton(
+              icon: const Icon(Icons.history_edu),
+              tooltip: 'Review cleared chunks',
+              onPressed: _openReview,
+            ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(4),
           child: LinearProgressIndicator(value: _progress),
@@ -133,10 +183,18 @@ class _ReadingSessionScreenState extends State<ReadingSessionScreen> {
             return const Center(child: Text('This book has no chunks yet.'));
           }
           if (_complete) {
-            return CompleteView(
-              book: widget.book,
-              totalChunks: chunkIds.length,
-              onRestart: _onRestart,
+            return FutureBuilder<Map<int, bool>>(
+              future: _finalScoreFuture,
+              builder: (context, scoreSnapshot) {
+                final answers = scoreSnapshot.data ?? const {};
+                return CompleteView(
+                  book: widget.book,
+                  totalChunks: chunkIds.length,
+                  correctAnswers: answers.values.where((c) => c).length,
+                  totalAnswers: answers.length,
+                  onRestart: _onRestart,
+                );
+              },
             );
           }
           return FutureBuilder<LoadedChunk>(
@@ -158,6 +216,7 @@ class _ReadingSessionScreenState extends State<ReadingSessionScreen> {
                 totalChunks: chunkIds.length,
                 isLastChunk: _chunkIndex + 1 >= chunkIds.length,
                 onChunkComplete: _onChunkComplete,
+                onAnswered: _onAnswered,
               );
             },
           );

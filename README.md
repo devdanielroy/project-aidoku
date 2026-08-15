@@ -14,7 +14,7 @@ See [AIDOKU_DESIGN.md](./AIDOKU_DESIGN.md) for the full design plan.
 ## Screenshots
 
 **Library**
-![Aidoku 01](docs/images/Aidoku_01.png)
+![Aidoku 01](docs/images/Aidoku_07.png)
 **Reading**
 ![Aidoku 02](docs/images/Aidoku_02.png)
 **Vocab Question**
@@ -25,8 +25,10 @@ See [AIDOKU_DESIGN.md](./AIDOKU_DESIGN.md) for the full design plan.
 ![Aidoku 05](docs/images/Aidoku_05.png)
 **Full Breakdown**
 ![Aidoku 06](docs/images/Aidoku_06.png)
+**Review Screen**
+![Aidoku 08](docs/images/Aidoku_08.png)
 
-(Screenshots taken on 14/08/2026)
+(Screenshots taken on 15/08/2026)
 
 ## Architecture
 
@@ -60,14 +62,14 @@ flowchart TD
 
     QA["5. QA pass ❌<br/>manual review, not built"]
     PUB["6. Publish ❌<br/>processing → published<br/>manual SQL, no real tooling"]
-    API["Content-serving REST API<br/>book-content/ (Go module), read-only<br/>/aidoku/... routes"]
+    API["Content-serving REST API<br/>book-content/ (Go module), read-only<br/>/aidoku/... routes incl. chunk summaries"]
 
     subgraph client["app/ — Flutter client"]
       direction TB
         UI["Library → Read → Questions → Breakdown <br/>wired to book-content over HTTP"]
         RESUME["Resume progress<br/>per book: current chunk index<br/>device-local (ProgressStore), pre-accounts"]
-        SCORE["Score tracking ❌<br/>correct/incorrect answer history per book"]
-        REVIEW["Chunk review ❌<br/>re-read chunks already cleared"]
+        SCORE["Score tracking<br/>correct/incorrect answer history per book<br/>device-local (ScoreStore), pre-accounts"]
+        REVIEW["Chunk review<br/>list + redo of chunks already cleared<br/>pass/fail from ScoreStore"]
         VOCAB["Vocab / mistake review deck ❌<br/>auto-collected across all books"]
         STREAK["Streaks + daily goal ❌"]
         TRANSLATE["Tap-to-translate ❌<br/>per-word, JMDict EN→JA, first read only"]
@@ -85,7 +87,7 @@ flowchart TD
     API -.-> UI
 
     classDef notBuilt stroke-dasharray: 5 5
-    class QA,PUB,SCORE,REVIEW,VOCAB,STREAK,DASH,TRANSLATE notBuilt
+    class QA,PUB,VOCAB,STREAK,DASH,TRANSLATE notBuilt
 ```
 
 Three separate `pipeline/cmd/*` binaries drive the pipeline side, not
@@ -189,18 +191,18 @@ go run ./book-content/cmd/server        # listens on :8080
 - [x] Flutter app: mock vertical slice of the full core loop, verified running natively on macOS
 - [x] Run `cmd/process` for real against The Vampyre — the full book, not just a test batch (estimated cost ~$5)
 - [x] Content-serving REST API (`book-content/`) — a separate Go module, read-only, serving book/chunk/question/breakdown as JSON over `/aidoku/...`, filtered to published books; connection plumbing shared with the pipeline via a third module (`shared/`) wired together with `go.work`. Smoke-tested end to end against the real Postgres data from The Vampyre (published manually via a one-off SQL update, since Publish tooling doesn't exist yet) — full book → chunk → question/breakdown chain, plus 404/400 error paths and graceful shutdown all verified against the running server.
-- [x] `book-content` added to `docker-compose.yml` (`book-content/Dockerfile`, multi-stage, built from the repo root since it resolves `shared/` via `go.work`) — `docker compose up -d` now brings up Postgres and the API together, `book-content` waiting on Postgres's healthcheck; verified with a real `docker compose up -d` / container-to-container request over the compose network, not just `go run` on the host.
-- [x] Flutter app wired to `book-content` (`BookContentRepository`, `lib/data/`) — the hand-authored mock content and `MockBookRepository` are gone; models flattened to match the API's response shapes exactly, chunk/question/breakdown fetched lazily per chunk (`LoadedChunk`) rather than all up front. Fixed a real bug surfaced by wiring in real data: `QuestionsView` rendered options in stored order (where the correct answer is always index 0 — see `pipeline/internal/question`), so it now shuffles for display. Widget tests rewired to a fake HTTP transport (`package:http`'s `MockClient`) instead of the removed mock repository, so they stay hermetic. Verified running natively on macOS end to end against the real Vampyre data — library → read → 3 questions → breakdown → next chunk. Needed one macOS-specific fix along the way: the App Sandbox blocks outbound connections (even to `localhost`) without the `com.apple.security.network.client` entitlement, which the default Flutter macOS template doesn't grant — added to both `Debug`/`Release.entitlements`.
-- [x] Resume progress (`ProgressStore`/`LocalProgressStore`, `lib/data/`) — device-local for now (`shared_preferences`), deliberately behind an interface so an account-backed implementation can swap in later (see AIDOKU_DESIGN.md §4's `UserProgress` sketch) without `LibraryScreen`/`ReadingSessionScreen` changing. Saves the current chunk index on every chunk change (not just on completion, so quitting mid-chunk still resumes at the right place), clears it once a book is finished, and falls back to the start on a stale/out-of-range saved index. Library cards show a real progress bar + "Chunk N of M" once a book has saved progress (the chunk-count fetch behind "of M" only happens for books actually in progress, not every book in the list). Covered by `progress_store_test.dart` (the store in isolation), `resume_test.dart` (the reading-screen wiring — resume, out-of-range fallback, and clearing on completion), and `library_screen_test.dart` (the card itself, with and without saved progress) — all driven through the real UI.
+- [x] `book-content` added to `docker-compose.yml` (`book-content/Dockerfile`, multi-stage, built from the repo root since it resolves `shared/` via `go.work`) — `docker compose up -d` now brings up Postgres and the API together, `book-content` waiting on Postgres's healthcheck; verified with a real `docker compose up -d` / container-to-container request over the compose network.
+- [x] Flutter app wired to `book-content` (`BookContentRepository`, `lib/data/`) — the hand-authored mock content and `MockBookRepository` are gone; models flattened to match the API's response shapes exactly, chunk/question/breakdown fetched lazily per chunk (`LoadedChunk`) rather than all up front. Question answers shuffled on the app side. Widget tests rewired to a fake HTTP transport (`package:http`'s `MockClient`) instead of the removed mock repository, so they stay hermetic. Verified running natively on macOS end to end against the real Vampyre data — library → read → 3 questions → breakdown → next chunk. Added `com.apple.security.network.client` entitlement to both `Debug`/`Release.entitlements`.
+- [x] Resume progress (`ProgressStore`/`LocalProgressStore`, `lib/data/`) — device-local for now (`shared_preferences`), deliberately behind an interface so an account-backed implementation can swap in later (see AIDOKU_DESIGN.md §4's `UserProgress` sketch) without `LibraryScreen`/`ReadingSessionScreen` changing. Saves the current chunk index on every chunk change, clears it once a book is finished, and falls back to the start on a stale/out-of-range saved index. Library cards show a real progress bar + "Chunk N of M" once a book has saved progress.
+- [x] Score tracking (`ScoreStore`/`LocalScoreStore`, `lib/data/`) — correct/incorrect history per question, device-local for now (same pattern as `ProgressStore`, kept as a separate interface — see its doc comment). Surfaced as an accuracy percentage on library cards and a full correct/total tally on `CompleteView`.
+- [x] Chunk review — an app bar icon on the reading screen opens a scrollable list of every cleared chunk, each row a teaser + a soft green/red tint and tick/cross icon for pass/fail, derived from `ScoreStore` — no new persistence needed. Tapping a row opens that chunk again — read → questions → breakdown, reusing `ChunkPanel` as-is. A chunk that was already fully correct opens *pre-answered* (every question shown already on its correct option, via `QuestionsView.startAnswered`); only a chunk with something wrong is a real interactive redo, which records to `ScoreStore` (overwriting the earlier attempt) same as before. Finishing one chunk auto-advances to the next reviewable one, same as the main flow, and returns to the list once there's nothing further to review. New backend endpoint proivides per chunk — previews, truncated server-side to the first sentence.
 
 **Next up**
 - [ ] Chapter boundary detection (deliberately deferred to the chunk-grouping stage — see design doc §7)
 - [ ] Pick a real product name (see the working-name note above)
-- [ ] Score tracking — correct/incorrect answer history per book (resume/chunk-index progress is done — see above; this is the remaining half of `UserProgress`, sketched in AIDOKU_DESIGN.md §4)
-- [ ] Chunk review — let a user flick back through chunks they've already cleared in a book
 - [ ] Personal vocab/mistake review deck — auto-collect words/grammar points answered incorrectly (or flagged) across *all* books into a standalone review list, not just chunk-level re-reading
 - [ ] Streaks + daily goal — reading streak tracking and a daily-goal nudge (AIDOKU_DESIGN.md §5's gamification section named this as TBD; now has a concrete data trigger via `UserProgress`)
-- [ ] Library dashboard — per-book completion % and accuracy, "continue reading" surfacing across the whole library
+- [ ] Library dashboard — a dedicated overview screen aggregating what's currently only shown per-card (completion %, accuracy — see Score tracking/Resume progress above), plus "continue reading" surfacing across the whole library
 - [ ] Tap-to-translate — per-word dictionary lookup (JMDict, EN→JA) on the first/unassisted reading page, to soften public-domain vocabulary difficulty without pipeline-side difficulty detection (too hard to judge accurately per level). Note: knowingly relaxes the "no dictionary during first read" principle in §2/`ReadingView` — worth reconciling there when built. For v0 English to Japanese, we can use
 https://www.edrdg.org/jmdict/j_jmdict.html combined with 
 https://github.com/aaaton/golem as a lemmatizer.
