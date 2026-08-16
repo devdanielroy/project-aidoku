@@ -1,9 +1,10 @@
-// Package catalog reads the book catalog file (pipeline/books.txt by
-// convention) that drives ingestion: which Gutenberg books to fetch, and
-// where each one's actual content starts/ends (see clean.Trim). See that
-// file's own header comment for the authoritative format description;
-// this package's tests intentionally parse the real file to keep the two
-// in sync.
+// Package catalog reads a book catalog file (pipeline/catalogs/<pair>.txt
+// by convention — one per language pair, see internal/langpair and
+// cmd/process's -pair flag) that drives ingestion: which Gutenberg books
+// to fetch, and where each one's actual content starts/ends (see
+// clean.Trim). See a catalog file's own header comment for the
+// authoritative format description; this package's tests intentionally
+// parse the real EN_JP.txt to keep the two in sync.
 package catalog
 
 import (
@@ -61,8 +62,8 @@ func ParseFile(path string) ([]Entry, error) {
 	return entries, nil
 }
 
-// Parse reads a catalog from r. See the package doc / books.txt's own
-// header for the format: blank-line-separated blocks of exactly 6 lines
+// Parse reads a catalog from r. See the package doc / a catalog file's
+// own header for the format: blank-line-separated blocks of exactly 6 lines
 // each (title, author, URL, first line, last line, "Level=X"), with
 // "#"-prefixed comment lines ignored wherever they appear.
 func Parse(r io.Reader) ([]Entry, error) {

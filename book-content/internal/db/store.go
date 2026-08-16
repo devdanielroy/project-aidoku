@@ -27,8 +27,15 @@ type Book struct {
 	Author      string `json:"author"`
 	SourceURL   string `json:"source_url"`
 	Level       int    `json:"level"`
-	Language    string `json:"language"`
-	Status      string `json:"status"`
+	// TargetLanguage/NativeLanguage are ISO 639-1 codes (e.g. "en",
+	// "ja"). Target is what the learner is studying (this book's
+	// source text is written in it); Native is the learner's own
+	// language (questions/breakdowns are written in it) — see
+	// pipeline/internal/langpair, the pipeline-side source of truth for
+	// what a "language pair" means.
+	TargetLanguage string `json:"target_language"`
+	NativeLanguage string `json:"native_language"`
+	Status         string `json:"status"`
 }
 
 // Chunk is the read-shaped response for one chunk, full text included —
@@ -81,7 +88,7 @@ type Breakdown struct {
 // steps flip that status (AIDOKU_DESIGN.md §3, stage 5/6).
 func (s *Store) ListBooks(ctx context.Context) ([]Book, error) {
 	const q = `
-		SELECT id, gutenberg_id, title, author, source_url, level, language, status
+		SELECT id, gutenberg_id, title, author, source_url, level, target_language, native_language, status
 		FROM book
 		WHERE status = 'published'
 		ORDER BY id`
@@ -95,7 +102,7 @@ func (s *Store) ListBooks(ctx context.Context) ([]Book, error) {
 	var books []Book
 	for rows.Next() {
 		var b Book
-		if err := rows.Scan(&b.ID, &b.GutenbergID, &b.Title, &b.Author, &b.SourceURL, &b.Level, &b.Language, &b.Status); err != nil {
+		if err := rows.Scan(&b.ID, &b.GutenbergID, &b.Title, &b.Author, &b.SourceURL, &b.Level, &b.TargetLanguage, &b.NativeLanguage, &b.Status); err != nil {
 			return nil, fmt.Errorf("db: ListBooks: scan: %w", err)
 		}
 		books = append(books, b)
@@ -110,12 +117,12 @@ func (s *Store) ListBooks(ctx context.Context) ([]Book, error) {
 // if it doesn't exist or isn't published.
 func (s *Store) GetBook(ctx context.Context, bookID int) (Book, error) {
 	const q = `
-		SELECT id, gutenberg_id, title, author, source_url, level, language, status
+		SELECT id, gutenberg_id, title, author, source_url, level, target_language, native_language, status
 		FROM book
 		WHERE id = $1 AND status = 'published'`
 
 	var b Book
-	err := s.db.QueryRow(ctx, q, bookID).Scan(&b.ID, &b.GutenbergID, &b.Title, &b.Author, &b.SourceURL, &b.Level, &b.Language, &b.Status)
+	err := s.db.QueryRow(ctx, q, bookID).Scan(&b.ID, &b.GutenbergID, &b.Title, &b.Author, &b.SourceURL, &b.Level, &b.TargetLanguage, &b.NativeLanguage, &b.Status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Book{}, ErrNotFound
 	}

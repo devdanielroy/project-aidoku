@@ -16,16 +16,28 @@
 -- AIDOKU_DESIGN.md §7e. gutenberg_id is the pipeline's stable identifier
 -- for a book (catalog.Entry.GutenbergID) — unique so re-running the
 -- pipeline against the same book doesn't create a duplicate.
+-- target_language/native_language are ISO 639-1 codes (e.g. 'en', 'ja')
+-- naming the book's language pair (see pipeline/internal/langpair) —
+-- target is the language the learner is studying and this book's source
+-- text is written in (was just "language", defaulting to 'en', before
+-- pairs existed); native is the learner's own language, what
+-- questions/breakdowns are written in.
+-- Both required, no default: which pair a book belongs to is always an
+-- explicit choice (pipeline/cmd/process's -pair flag), never assumed.
+-- Every downstream table (chunk, question, breakdown, user_progress)
+-- scopes to a pair transitively via book_id — nothing needs its own
+-- copy of this.
 CREATE TABLE book (
-    id           SERIAL PRIMARY KEY,
-    gutenberg_id INTEGER NOT NULL UNIQUE,
-    title        TEXT NOT NULL,
-    author       TEXT NOT NULL,
-    source_url   TEXT NOT NULL,
-    level        SMALLINT NOT NULL CHECK (level BETWEEN 1 AND 10),
-    language     TEXT NOT NULL DEFAULT 'en',
-    status       TEXT NOT NULL DEFAULT 'processing' CHECK (status IN ('processing', 'published')),
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    id              SERIAL PRIMARY KEY,
+    gutenberg_id    INTEGER NOT NULL UNIQUE,
+    title           TEXT NOT NULL,
+    author          TEXT NOT NULL,
+    source_url      TEXT NOT NULL,
+    level           SMALLINT NOT NULL CHECK (level BETWEEN 1 AND 10),
+    target_language TEXT NOT NULL,
+    native_language TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'processing' CHECK (status IN ('processing', 'published')),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- Chunk: one reading chunk within a book, in reading order. "index" is

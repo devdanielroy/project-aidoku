@@ -1,9 +1,12 @@
-// Command ingest reads the book catalog (see pipeline/books.txt) and, for
-// each entry, runs it through every pipeline stage that doesn't require
-// the (paid) Claude API: fetch, clean, trim (internal/pipeline.PrepareBook
-// — stages 1-2), then sentence segmentation (internal/segment — stage 3).
+// Command ingest reads a book catalog (see pipeline/catalogs/, one file
+// per language pair — -catalog defaults to the EN_JP one) and, for each
+// entry, runs it through every pipeline stage that doesn't require the
+// (paid) Claude API: fetch, clean, trim (internal/pipeline.PrepareBook —
+// stages 1-2), then sentence segmentation (internal/segment — stage 3).
 // Writes two files per book: the prepared novel text, and its sentences
-// one per line. Stage 4 (LLM chunk grouping) and beyond are not run here.
+// one per line. Stage 4 (LLM chunk grouping) and beyond are not run
+// here — this command doesn't need to know which language pair it's
+// for at all, since it never touches question/breakdown generation.
 package main
 
 import (
@@ -22,7 +25,7 @@ import (
 )
 
 func main() {
-	catalogPath := flag.String("catalog", "books.txt", "path to the book catalog file")
+	catalogPath := flag.String("catalog", "catalogs/EN_JP.txt", "path to the book catalog file")
 	outDir := flag.String("out", "books", "directory to write prepared book text into, one file per book")
 	flag.Parse()
 

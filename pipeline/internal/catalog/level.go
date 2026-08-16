@@ -3,7 +3,7 @@ package catalog
 import "fmt"
 
 // ReadingLevel is one of the ten reading-comprehension levels a book is
-// assigned in the catalog (see books.txt's "Level=" line). Unlike every
+// assigned in the catalog (see a catalog file's "Level=" line). Unlike every
 // other field on Entry, this is never derived or detected by the
 // pipeline — a human decides it per book (typically weighing vocabulary
 // difficulty, sentence complexity, and how the book maps to TOEIC/CEFR,

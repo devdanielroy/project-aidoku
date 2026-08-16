@@ -30,24 +30,32 @@ import (
 	"aidoku/pipeline/internal/catalog"
 	"aidoku/pipeline/internal/chunk"
 	"aidoku/pipeline/internal/db"
+	"aidoku/pipeline/internal/langpair"
 	"aidoku/pipeline/internal/question"
 	"aidoku/pipeline/internal/types"
 	"aidoku/shared/dotenv"
 )
 
+// pair is hardcoded to EN_JP rather than taking a -pair flag like
+// cmd/process — this is a throwaway smoke test against hand-typed
+// sentences, not something meant to be pair-flexible.
+var pair = langpair.EN_JP
+
 // book identifies Pride and Prejudice (a real book, Gutenberg #1342) —
 // hardcoded rather than loaded from the catalog, matching this command's
 // existing "no dependency on testdata file layout or the
 // ingest/clean/segment stages" design, and independent of whatever
-// pipeline/books.txt's live catalog currently lists (currently The
-// Vampyre — see books.txt). Every field here is a true fact about the
-// real book; it's just not sourced from the catalog file.
+// pipeline/catalogs/EN_JP.txt's live catalog currently lists (currently
+// The Vampyre). Every field here is a true fact about the real book;
+// it's just not sourced from the catalog file.
 var book = db.Book{
-	GutenbergID: 1342,
-	Title:       "Pride and Prejudice",
-	Author:      "Jane Austen",
-	SourceURL:   "https://www.gutenberg.org/cache/epub/1342/pg1342.txt",
-	Level:       catalog.LevelScholar,
+	GutenbergID:    1342,
+	Title:          "Pride and Prejudice",
+	Author:         "Jane Austen",
+	SourceURL:      "https://www.gutenberg.org/cache/epub/1342/pg1342.txt",
+	Level:          catalog.LevelScholar,
+	TargetLanguage: pair.Target,
+	NativeLanguage: pair.Native,
 }
 
 func main() {
@@ -94,7 +102,7 @@ func main() {
 	}
 
 	fmt.Println("\n=== Question generation: chunk 0 only (1 real API call, claude-sonnet-5) ===")
-	generator := question.NewGenerator(client)
+	generator := question.NewGenerator(client, pair)
 	questions, err := generator.GenerateQuestions(ctx, chunks[0])
 	if err != nil {
 		log.Fatalf("livetest: question generation: %v", err)
@@ -108,7 +116,7 @@ func main() {
 	}
 
 	fmt.Println("\n=== Breakdown generation: chunk 0 only (1 real API call, claude-sonnet-5) ===")
-	breakdownGenerator := breakdown.NewGenerator(client)
+	breakdownGenerator := breakdown.NewGenerator(client, pair)
 	breakdownContent, err := breakdownGenerator.GenerateBreakdown(ctx, chunks[0])
 	if err != nil {
 		log.Fatalf("livetest: breakdown generation: %v", err)

@@ -19,7 +19,8 @@ const testBook = {
   'author': 'Test Author',
   'source_url': 'https://example.com/test.txt',
   'level': 5,
-  'language': 'en',
+  'target_language': 'en',
+  'native_language': 'ja',
   'status': 'published',
 };
 

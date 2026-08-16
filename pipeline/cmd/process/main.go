@@ -37,6 +37,12 @@
 // calls and zero Postgres writes. Requires ANTHROPIC_API_KEY and the
 // local dev Postgres (`docker compose up -d`) only when not in
 // -dry-run.
+//
+// -pair is required — there is no default language pair (see
+// internal/langpair). It picks both the LanguagePair every generated
+// question/breakdown is written in and which catalog file
+// (pipeline/catalogs/<pair>.txt) supplies the books, so the two can't
+// drift out of sync.
 package main
 
 import (
@@ -44,6 +50,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 
 	"aidoku/pipeline/internal/anthropic"
 	"aidoku/pipeline/internal/breakdown"
@@ -51,6 +60,7 @@ import (
 	"aidoku/pipeline/internal/chunk"
 	"aidoku/pipeline/internal/db"
 	"aidoku/pipeline/internal/ingest"
+	"aidoku/pipeline/internal/langpair"
 	"aidoku/pipeline/internal/pipeline"
 	"aidoku/pipeline/internal/question"
 	"aidoku/pipeline/internal/segment"
@@ -59,20 +69,58 @@ import (
 )
 
 func main() {
-	catalogPath := flag.String("catalog", "books.txt", "path to the book catalog file")
+	pairCode := flag.String("pair", "", "language pair to process — required, one of: "+strings.Join(sortedPairCodes(), ", "))
 	wantID := flag.Int("book", 0, "Gutenberg ID to process; 0 processes every entry in the catalog")
 	dryRun := flag.Bool("dry-run", false, "compute windowing and real-API-call counts plus a rough cost estimate, without calling the Claude API or writing to Postgres")
 	flag.Parse()
 
-	if err := run(*catalogPath, *wantID, *dryRun); err != nil {
+	if err := run(*pairCode, *wantID, *dryRun); err != nil {
 		fmt.Fprintln(os.Stderr, "process:", err)
 		os.Exit(1)
 	}
 }
 
-func run(catalogPath string, wantID int, dryRun bool) error {
+func sortedPairCodes() []string {
+	codes := make([]string, 0, len(langpair.ByCode))
+	for code := range langpair.ByCode {
+		codes = append(codes, code)
+	}
+	sort.Strings(codes)
+	return codes
+}
+
+// resolveCatalogPath finds pairCode's catalog file — pipeline/catalogs/
+// when run from the repo root, or catalogs/ when run from pipeline/
+// itself (same dual-cwd support as the .env loading below).
+func resolveCatalogPath(pairCode string) (string, error) {
+	candidates := []string{
+		filepath.Join("catalogs", pairCode+".txt"),
+		filepath.Join("pipeline", "catalogs", pairCode+".txt"),
+	}
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		}
+	}
+	return "", fmt.Errorf("no catalog file found for -pair %s (tried %s)", pairCode, strings.Join(candidates, ", "))
+}
+
+func run(pairCode string, wantID int, dryRun bool) error {
 	dotenv.Load(".env")
 	dotenv.Load("../.env") // in case run from pipeline/
+
+	if pairCode == "" {
+		return fmt.Errorf("-pair is required, one of: %s", strings.Join(sortedPairCodes(), ", "))
+	}
+	pair, ok := langpair.ByCode[pairCode]
+	if !ok {
+		return fmt.Errorf("unknown -pair %q, want one of: %s", pairCode, strings.Join(sortedPairCodes(), ", "))
+	}
+
+	catalogPath, err := resolveCatalogPath(pairCode)
+	if err != nil {
+		return err
+	}
 
 	entries, err := catalog.ParseFile(catalogPath)
 	if err != nil {
@@ -113,7 +161,7 @@ func run(catalogPath string, wantID int, dryRun bool) error {
 
 	failedBooks := 0
 	for _, entry := range entries {
-		if err := processBook(ctx, entry, ingestClient, client, store, dryRun); err != nil {
+		if err := processBook(ctx, entry, pair, ingestClient, client, store, dryRun); err != nil {
 			fmt.Fprintf(os.Stderr, "book %d (%s): %v\n", entry.GutenbergID, entry.Title, err)
 			failedBooks++
 		}
@@ -134,7 +182,7 @@ func filterByGutenbergID(entries []catalog.Entry, id int) []catalog.Entry {
 	return filtered
 }
 
-func processBook(ctx context.Context, entry catalog.Entry, ingestClient *ingest.Client, client *anthropic.Client, store *db.Store, dryRun bool) error {
+func processBook(ctx context.Context, entry catalog.Entry, pair langpair.LanguagePair, ingestClient *ingest.Client, client *anthropic.Client, store *db.Store, dryRun bool) error {
 	fmt.Printf("=== %s by %s (Gutenberg #%d) ===\n", entry.Title, entry.Author, entry.GutenbergID)
 
 	text, err := pipeline.PrepareBook(ctx, ingestClient, entry)
@@ -158,7 +206,7 @@ func processBook(ctx context.Context, entry catalog.Entry, ingestClient *ingest.
 		return nil
 	}
 
-	book := db.NewBookFromEntry(entry)
+	book := db.NewBookFromEntry(entry, pair)
 	bookID, err := store.UpsertBook(ctx, book)
 	if err != nil {
 		return fmt.Errorf("save book: %w", err)
@@ -170,8 +218,8 @@ func processBook(ctx context.Context, entry catalog.Entry, ingestClient *ingest.
 	}
 	fmt.Printf("  -> %d chunk(s) total\n", len(allChunks))
 
-	questionGen := question.NewGenerator(client)
-	breakdownGen := breakdown.NewGenerator(client)
+	questionGen := question.NewGenerator(client, pair)
+	breakdownGen := breakdown.NewGenerator(client, pair)
 
 	failedChunks := 0
 	for _, c := range allChunks {

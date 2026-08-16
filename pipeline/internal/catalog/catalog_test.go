@@ -171,16 +171,16 @@ func TestParse_CommentOnlyFile(t *testing.T) {
 	}
 }
 
-// TestParseFile_RealBooksTxt parses the actual pipeline/books.txt this
-// project uses, to keep this package's understanding of the format in
-// sync with the real file (and its own header comment).
+// TestParseFile_RealBooksTxt parses the actual pipeline/catalogs/EN_JP.txt
+// this project uses, to keep this package's understanding of the format
+// in sync with the real file (and its own header comment).
 func TestParseFile_RealBooksTxt(t *testing.T) {
-	entries, err := ParseFile("../../books.txt")
+	entries, err := ParseFile("../../catalogs/EN_JP.txt")
 	if err != nil {
 		t.Fatalf("ParseFile: %v", err)
 	}
 	if len(entries) == 0 {
-		t.Fatal("expected at least one entry in the real books.txt")
+		t.Fatal("expected at least one entry in the real EN_JP.txt")
 	}
 
 	found := false

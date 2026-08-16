@@ -1,7 +1,9 @@
-# Book catalog: which Gutenberg books to ingest, and where the actual
-# novel text starts/ends within them (everything outside that range -
-# prefaces, illustration lists, colophons, "THE END" notices, and
-# whatever else different editions surround the story with - is trimmed).
+# Book catalog for the EN_JP language pair (English source text,
+# Japanese explanations — see pipeline/internal/langpair): which
+# Gutenberg books to ingest, and where the actual novel text starts/ends
+# within them (everything outside that range - prefaces, illustration
+# lists, colophons, "THE END" notices, and whatever else different
+# editions surround the story with - is trimmed).
 #
 # Format: one entry per block, blocks separated by a single blank line.
 # Each block is exactly 6 lines, in order:

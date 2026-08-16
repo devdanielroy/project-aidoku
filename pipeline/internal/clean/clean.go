@@ -107,7 +107,7 @@ func dewrapParagraphs(body string) string {
 // front matter (prefaces, illustration lists, title pages) before
 // firstLine, and back matter (colophons, "THE END" notices, appendices)
 // after lastLine. Both anchors are book-specific and human-supplied (see
-// pipeline/books.txt) rather than detected — there's no reliable generic
+// pipeline/catalogs/) rather than detected — there's no reliable generic
 // way to recognize "front/back matter" across arbitrarily different
 // editions, as Clean's own package doc explains.
 //

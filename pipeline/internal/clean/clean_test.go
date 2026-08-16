@@ -290,11 +290,11 @@ func TestClean_RealPrideAndPrejudice(t *testing.T) {
 
 // TestTrim_RealPrideAndPrejudice runs Clean then Trim on the real Pride
 // and Prejudice text (testdata/pg1342.txt) — a standing regression
-// fixture for this package, independent of whatever pipeline/books.txt's
+// fixture for this package, independent of whatever the real catalog's
 // live catalog currently contains (it once held this exact book's entry,
-// before being swapped for a shorter/cheaper PoC book — see books.txt) —
+// before being swapped for a shorter/cheaper PoC book — see pipeline/catalogs/) —
 // to prove Trim works end to end against real, not hand-crafted, content.
-// The anchors below are hardcoded rather than read from books.txt for
+// The anchors below are hardcoded rather than read from a catalog file for
 // exactly that reason: this test's job is exercising Trim against a
 // known-real fixture, not asserting what the catalog currently lists.
 func TestTrim_RealPrideAndPrejudice(t *testing.T) {

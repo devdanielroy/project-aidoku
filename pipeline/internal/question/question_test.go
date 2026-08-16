@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"aidoku/pipeline/internal/anthropic"
+	"aidoku/pipeline/internal/langpair"
 	"aidoku/pipeline/internal/types"
 )
 
@@ -219,7 +220,7 @@ const missingHighlightJSON = `{"questions":[
 
 func testGenerator(caller llmCaller) (*Generator, *bytes.Buffer) {
 	var logBuf bytes.Buffer
-	g := &Generator{Client: caller, Logger: log.New(&logBuf, "", 0)}
+	g := &Generator{Client: caller, Logger: log.New(&logBuf, "", 0), LanguagePair: langpair.EN_JP}
 	return g, &logBuf
 }
 
@@ -261,6 +262,37 @@ func TestGenerateQuestions_RetryThenSuccess(t *testing.T) {
 	}
 	if !strings.Contains(logBuf.String(), "chunk 0") {
 		t.Errorf("expected the failed first attempt to be logged, got %q", logBuf.String())
+	}
+}
+
+func TestGenerateQuestions_FailsIfLanguagePairUnset(t *testing.T) {
+	caller := &fakeCaller{responses: []fakeResponse{{text: validSetJSON}}}
+	g := &Generator{Client: caller} // LanguagePair left zero-valued
+
+	_, err := g.GenerateQuestions(context.Background(), testChunk)
+	if err == nil {
+		t.Fatal("GenerateQuestions() with no LanguagePair = nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "LanguagePair") {
+		t.Errorf("error = %q, want it to mention LanguagePair", err.Error())
+	}
+	if caller.calls != 0 {
+		t.Errorf("expected no LLM call when LanguagePair is unset, got %d", caller.calls)
+	}
+}
+
+func TestBuildSystemPrompt_ReflectsThePairPassedIn(t *testing.T) {
+	enJP := buildSystemPrompt(langpair.EN_JP)
+	if !strings.Contains(enJP, "Japanese speaker (L1) learning English (L2)") {
+		t.Errorf("EN_JP prompt doesn't mention the expected learner description: %s", enJP)
+	}
+
+	jpEN := buildSystemPrompt(langpair.JP_EN)
+	if !strings.Contains(jpEN, "English speaker (L1) learning Japanese (L2)") {
+		t.Errorf("JP_EN prompt doesn't mention the expected learner description: %s", jpEN)
+	}
+	if enJP == jpEN {
+		t.Error("EN_JP and JP_EN produced identical prompts, want them to differ")
 	}
 }
 

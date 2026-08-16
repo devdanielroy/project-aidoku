@@ -16,7 +16,16 @@ class Book {
   /// 1 (easiest) to 10 (hardest) — see readingLevelName for the
   /// human-facing name (README's Reading Levels table).
   final int level;
-  final String language;
+
+  /// ISO 639-1 codes (e.g. "en", "ja"). targetLanguage is what the
+  /// reader is studying (this book's text is written in it);
+  /// nativeLanguage is the reader's own language (questions/breakdowns
+  /// are written in it) — see pipeline/internal/langpair, the
+  /// pipeline-side source of truth for what a "language pair" means.
+  /// Neither is used for anything in the app yet — just carried through
+  /// so this type stays a 1:1 match for book-content's response.
+  final String targetLanguage;
+  final String nativeLanguage;
   final String status;
 
   const Book({
@@ -26,7 +35,8 @@ class Book {
     required this.author,
     required this.sourceUrl,
     required this.level,
-    required this.language,
+    required this.targetLanguage,
+    required this.nativeLanguage,
     required this.status,
   });
 
@@ -38,7 +48,8 @@ class Book {
       author: json['author'] as String,
       sourceUrl: json['source_url'] as String,
       level: json['level'] as int,
-      language: json['language'] as String,
+      targetLanguage: json['target_language'] as String,
+      nativeLanguage: json['native_language'] as String,
       status: json['status'] as String,
     );
   }

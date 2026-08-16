@@ -42,8 +42,8 @@ func openTestStore(t *testing.T) (*Store, pgx.Tx, context.Context) {
 func insertBook(t *testing.T, tx pgx.Tx, ctx context.Context, gutenbergID int, status string) int {
 	t.Helper()
 	const q = `
-		INSERT INTO book (gutenberg_id, title, author, source_url, level, status)
-		VALUES ($1, 'Test Book', 'Test Author', 'https://example.com/test.txt', 5, $2)
+		INSERT INTO book (gutenberg_id, title, author, source_url, level, target_language, native_language, status)
+		VALUES ($1, 'Test Book', 'Test Author', 'https://example.com/test.txt', 5, 'en', 'ja', $2)
 		RETURNING id`
 	var id int
 	if err := tx.QueryRow(ctx, q, gutenbergID, status).Scan(&id); err != nil {

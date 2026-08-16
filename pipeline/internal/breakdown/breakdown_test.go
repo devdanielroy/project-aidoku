@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"aidoku/pipeline/internal/anthropic"
+	"aidoku/pipeline/internal/langpair"
 	"aidoku/pipeline/internal/types"
 )
 
@@ -22,7 +23,7 @@ var testChunk = types.Chunk{
 const validBreakdown = "【文構造】\"It is a truth universally acknowledged, that ...\" は形式主語構文です。\n\n【語彙】\n・acknowledged「認められている」\n\n【意味】当時の結婚観への皮肉です。"
 
 func TestValidateBreakdown_Valid(t *testing.T) {
-	if err := validateBreakdown(validBreakdown); err != nil {
+	if err := validateBreakdown(langpair.EN_JP, validBreakdown); err != nil {
 		t.Errorf("validateBreakdown(%q) = %v, want nil", validBreakdown, err)
 	}
 }
@@ -39,7 +40,7 @@ func TestValidateBreakdown_Invalid(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := validateBreakdown(tc.content)
+			err := validateBreakdown(langpair.EN_JP, tc.content)
 			if err == nil {
 				t.Fatal("validateBreakdown() = nil, want an error")
 			}
@@ -47,6 +48,18 @@ func TestValidateBreakdown_Invalid(t *testing.T) {
 				t.Errorf("error = %q, want it to contain %q", err.Error(), tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestValidateBreakdown_JPEN_RejectsJapaneseLeftover(t *testing.T) {
+	// JP_EN's ValidateNativeText checks the opposite direction from
+	// EN_JP's — it should reject a "breakdown" that's still in Japanese
+	// (the Target language here, not Native).
+	if err := validateBreakdown(langpair.JP_EN, validBreakdown); err == nil {
+		t.Fatal("validateBreakdown(JP_EN, <Japanese text>) = nil, want an error")
+	}
+	if err := validateBreakdown(langpair.JP_EN, "This is a fully English explanation."); err != nil {
+		t.Errorf("validateBreakdown(JP_EN, <English text>) = %v, want nil", err)
 	}
 }
 
@@ -81,7 +94,7 @@ func (f *fakeCaller) CreateMessage(ctx context.Context, req anthropic.MessagesRe
 
 func testGenerator(caller llmCaller) (*Generator, *bytes.Buffer) {
 	var logBuf bytes.Buffer
-	g := &Generator{Client: caller, Logger: log.New(&logBuf, "", 0)}
+	g := &Generator{Client: caller, Logger: log.New(&logBuf, "", 0), LanguagePair: langpair.EN_JP}
 	return g, &logBuf
 }
 
@@ -125,6 +138,43 @@ func TestGenerateBreakdown_RetryThenSuccess(t *testing.T) {
 	}
 	if !strings.Contains(logBuf.String(), "chunk 0") {
 		t.Errorf("expected the failed first attempt to be logged, got %q", logBuf.String())
+	}
+}
+
+func TestGenerateBreakdown_FailsIfLanguagePairUnset(t *testing.T) {
+	caller := &fakeCaller{responses: []fakeResponse{{text: validBreakdown}}}
+	g := &Generator{Client: caller} // LanguagePair left zero-valued
+
+	_, err := g.GenerateBreakdown(context.Background(), testChunk)
+	if err == nil {
+		t.Fatal("GenerateBreakdown() with no LanguagePair = nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "LanguagePair") {
+		t.Errorf("error = %q, want it to mention LanguagePair", err.Error())
+	}
+	if caller.calls != 0 {
+		t.Errorf("expected no LLM call when LanguagePair is unset, got %d", caller.calls)
+	}
+}
+
+func TestBuildSystemPrompt_ReflectsThePairPassedIn(t *testing.T) {
+	enJP := buildSystemPrompt(langpair.EN_JP)
+	if !strings.Contains(enJP, "Japanese speaker (L1) learning English (L2)") {
+		t.Errorf("EN_JP prompt doesn't mention the expected learner description: %s", enJP)
+	}
+	if !strings.Contains(enJP, "【文構造】") {
+		t.Errorf("EN_JP prompt doesn't mention its section labels: %s", enJP)
+	}
+
+	jpEN := buildSystemPrompt(langpair.JP_EN)
+	if !strings.Contains(jpEN, "English speaker (L1) learning Japanese (L2)") {
+		t.Errorf("JP_EN prompt doesn't mention the expected learner description: %s", jpEN)
+	}
+	if !strings.Contains(jpEN, "[Sentence Structure]") {
+		t.Errorf("JP_EN prompt doesn't mention its section labels: %s", jpEN)
+	}
+	if enJP == jpEN {
+		t.Error("EN_JP and JP_EN produced identical prompts, want them to differ")
 	}
 }
 

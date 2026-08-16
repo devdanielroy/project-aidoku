@@ -23,7 +23,7 @@ const WindowTargetChars = 3000
 // designed yet, let alone implemented, so a chunk that would ideally
 // span a window boundary instead gets cut there by whichever window it
 // falls into. Acceptable for this pipeline's actual v0 target (a short
-// story — see pipeline/books.txt): few, if any, windows in practice, so
+// story — see pipeline/catalogs/): few, if any, windows in practice, so
 // few or no boundaries to get wrong in the first place. Revisit once a
 // longer book makes this matter.
 func SplitIntoWindows(sentences []types.SentenceInput, targetChars int) [][]types.SentenceInput {

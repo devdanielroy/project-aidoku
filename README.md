@@ -39,7 +39,7 @@ marked ❌ are designed but not built yet:
 ```mermaid
 flowchart TD
     GB[("Project Gutenberg<br/>plain text book")]
-    BT["books.txt catalog<br/>title / author / URL / anchors / Level=X<br/>(edited by hand, per book)"]
+    BT["catalogs/&lt;pair&gt;.txt<br/>title / author / URL / anchors / Level=X<br/>(edited by hand, per book; -pair picks the file)"]
 
     subgraph pipeline["pipeline/ (Go module) — run via cmd/process"]
         direction TB
@@ -185,7 +185,7 @@ go run ./book-content/cmd/server        # listens on :8080
 - [x] Pipeline: LLM chunk grouping (Stage B) and question generation (vocab/grammar/comprehension) — built, tested against fakes, and now run for real against the Claude API for the first time (small test batch, not a full book yet)
 - [x] Pipeline: breakdown generation (`internal/breakdown`) — full Japanese explanation per chunk (sentence structure/vocab/grammar/meaning), matching the Flutter mock content's established house style; built and tested against fakes, wired into `cmd/livetest`, not yet run against the real Claude API
 - [x] Pipeline: ingest, clean, book catalog, trim — run for real against Project Gutenberg; a real book (Pride and Prejudice) fully cleaned end to end, front/back matter and illustration placeholders handled
-- [x] Book grading/leveling — manual, not a pipeline stage: assigned per book as a `Level=` line in `pipeline/books.txt`, parsed into a `ReadingLevel` enum by `internal/catalog`
+- [x] Book grading/leveling — manual, not a pipeline stage: assigned per book as a `Level=` line in its catalog file (`pipeline/catalogs/`), parsed into a `ReadingLevel` enum by `internal/catalog`
 - [x] Storage — Postgres schema (`db/schema.sql`) plus a Go package (`internal/db`) to write to it (upsert book/chunk/question, save breakdown); `cmd/livetest` now persists its real-API output through it, so pipeline results survive between dev sessions
 - [x] Full pipeline orchestration (`cmd/process`) — runs ingest → Stage A → windowing (`chunk.SplitIntoWindows`) → Stage B → question gen → breakdown gen → `internal/db` for every book in the catalog, with per-chunk failure handling and a `-dry-run` mode; not yet run for real (`-dry-run` against The Vampyre: 17 windows, ~195 chunks, ~407 real API calls, ~$2.47 estimated)
 - [x] Flutter app: mock vertical slice of the full core loop, verified running natively on macOS
@@ -209,7 +209,7 @@ https://github.com/aaaton/golem as a lemmatizer.
 
 ## Adding a Book to the Catalog
 
-Books are added to [`pipeline/books.txt`](./pipeline/books.txt), one entry per book, entries separated by a blank line. Each entry is exactly six lines, in this order:
+Books are added to a catalog file under [`pipeline/catalogs/`](./pipeline/catalogs) — one file per language pair (see [AIDOKU_DESIGN.md §7i](./AIDOKU_DESIGN.md)): [`EN_JP.txt`](./pipeline/catalogs/EN_JP.txt) for English source books with Japanese explanations, [`JP_EN.txt`](./pipeline/catalogs/JP_EN.txt) for the reverse. `cmd/process`'s `-pair` flag picks which one a run reads — there's no default. Within a file, one entry per book, entries separated by a blank line. Each entry is exactly six lines, in this order:
 
 1. **Title** — exactly as shown to the user.
 2. **Author** — exactly as shown to the user.
@@ -220,7 +220,7 @@ Books are added to [`pipeline/books.txt`](./pipeline/books.txt), one entry per b
 
 A `# comment` line is ignored by the parser wherever it appears — useful for a section header, or for commenting out an entry, but no longer needed per-entry now that title/author are real fields.
 
-`pipeline/books.txt`'s own header comment carries this same spec, kept in sync — `internal/catalog`'s tests parse the real file, so the two can't silently drift apart.
+Each catalog file's own header comment carries this same spec, kept in sync — `internal/catalog`'s tests parse the real `EN_JP.txt` file, so the two can't silently drift apart.
 
 ## Reading Levels
 
@@ -239,6 +239,6 @@ Each book is assigned a reading comprehension level manually, by me, correspondi
 | 9 | Academic   | 945–965     | C1 (low) |
 | 10 | Scholar   | 966–990     | C1 (high) |
 
-Recorded as a `Level=` line in [`pipeline/books.txt`](./pipeline/books.txt), parsed into a `catalog.ReadingLevel` enum by `pipeline/internal/catalog` — not computed by the pipeline itself.
+Recorded as a `Level=` line in a catalog file (see [`pipeline/catalogs/`](./pipeline/catalogs)), parsed into a `catalog.ReadingLevel` enum by `pipeline/internal/catalog` — not computed by the pipeline itself.
 
 See [AIDOKU_DESIGN.md §3](./AIDOKU_DESIGN.md) for the detailed per-stage status table, and §7 for open design questions.

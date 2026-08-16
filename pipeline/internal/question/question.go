@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"aidoku/pipeline/internal/anthropic"
+	"aidoku/pipeline/internal/langpair"
 	"aidoku/pipeline/internal/types"
 )
 
@@ -65,12 +66,18 @@ type Generator struct {
 	Model     string      // defaults to DefaultModel if empty
 	MaxTokens int         // defaults to DefaultMaxTokens if zero
 	Logger    *log.Logger // defaults to log.Default() if nil; records failed attempts for review
+
+	// LanguagePair is required, not defaulted — GenerateQuestions
+	// returns an error immediately if it's left unset, rather than
+	// silently assuming a pair. See langpair's package doc for why
+	// there's no default.
+	LanguagePair langpair.LanguagePair
 }
 
-// NewGenerator returns a Generator backed by client, using default
-// model/token/logger settings.
-func NewGenerator(client *anthropic.Client) *Generator {
-	return &Generator{Client: client}
+// NewGenerator returns a Generator backed by client and pair, using
+// default model/token/logger settings.
+func NewGenerator(client *anthropic.Client, pair langpair.LanguagePair) *Generator {
+	return &Generator{Client: client, LanguagePair: pair}
 }
 
 func (g *Generator) model() string {
@@ -97,8 +104,13 @@ func (g *Generator) logger() *log.Logger {
 // GenerateQuestions produces exactly one vocab, one grammar, and one
 // comprehension question for chunk, returned in that canonical order
 // regardless of what order the LLM listed them in. See the package doc
-// for why a failure here is a returned error, not a silent fallback.
+// for why a failure here is a returned error, not a silent fallback —
+// including when LanguagePair itself was never configured.
 func (g *Generator) GenerateQuestions(ctx context.Context, chunk types.Chunk) ([]types.Question, error) {
+	if g.LanguagePair.Target == "" || g.LanguagePair.Native == "" {
+		return nil, fmt.Errorf("question: Generator.LanguagePair is not set (see langpair.ByCode)")
+	}
+
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		set, err := g.callLLM(ctx, chunk)
@@ -124,7 +136,7 @@ func (g *Generator) callLLM(ctx context.Context, chunk types.Chunk) (rawQuestion
 	resp, err := g.Client.CreateMessage(ctx, anthropic.MessagesRequest{
 		Model:     g.model(),
 		MaxTokens: g.maxTokens(),
-		System:    systemPrompt,
+		System:    buildSystemPrompt(g.LanguagePair),
 		Messages:  []anthropic.Message{{Role: "user", Content: string(payload)}},
 	})
 	if err != nil {
@@ -143,33 +155,38 @@ func (g *Generator) callLLM(ctx context.Context, chunk types.Chunk) (rawQuestion
 	return parsed, nil
 }
 
-// systemPrompt fixes the three question types' rules, the Japanese-L1
-// explanation requirement (AIDOKU_DESIGN.md §2 step 5), the highlight
-// contract, and the exact JSON output schema.
-var systemPrompt = fmt.Sprintf(`You are a stage in an offline book-processing pipeline for a language-learning app. The learner is a Japanese speaker (L1) learning English (L2) through literature. You will receive a single JSON object describing one reading "chunk": {"index": <int>, "text": <string>, "char_count": <int>}.
+// buildSystemPrompt fixes the three question types' rules, the
+// highlight contract, and the exact JSON output schema — parameterized
+// by pair for which language the learner is studying (Target) vs.
+// their own (Native), the language everything the reader sees
+// (prompts/options/explanations) is written in. See AIDOKU_DESIGN.md §2
+// step 5 and §7's "i18n architecture" open question.
+func buildSystemPrompt(pair langpair.LanguagePair) string {
+	target, native := langpair.DisplayName(pair.Target), langpair.DisplayName(pair.Native)
+	return fmt.Sprintf(`You are a stage in an offline book-processing pipeline for a language-learning app. The learner is a %[2]s speaker (L1) learning %[1]s (L2) through literature. You will receive a single JSON object describing one reading "chunk": {"index": <int>, "text": <string>, "char_count": <int>}.
 
 Your job: write exactly three multiple-choice questions testing this chunk — one "vocab", one "grammar", one "comprehension" — each testing something different, so they don't overlap with each other.
 
 For "vocab":
 - Pick one notable or high-value word (or short fixed phrase, e.g. a phrasal verb) from the chunk that's worth testing.
 - "highlight" must be that exact word/phrase, copied byte-for-byte from the chunk's "text" (same case, same punctuation) — it must appear verbatim as a substring of it.
-- "prompt" asks what the underlined word/phrase means, in Japanese, without repeating the surrounding sentence — the reader will see it underlined directly in the passage, so don't re-quote it.
-- "explanation" is 1-3 Japanese sentences explaining the word's meaning as used here.
+- "prompt" asks what the underlined word/phrase means, in %[2]s, without repeating the surrounding sentence — the reader will see it underlined directly in the passage, so don't re-quote it.
+- "explanation" is 1-3 %[2]s sentences explaining the word's meaning as used here.
 
 For "grammar":
 - Identify one grammar pattern or construction actually present in the chunk (e.g. a modal, a tense, reported speech, a conditional, an inversion, a relative clause).
 - "highlight" must be the exact span of text demonstrating that pattern, copied byte-for-byte from the chunk's "text".
-- "prompt" asks what the underlined grammar expresses, in Japanese, without re-quoting the passage.
-- "explanation" is 1-3 Japanese sentences explaining the grammar point.
+- "prompt" asks what the underlined grammar expresses, in %[2]s, without re-quoting the passage.
+- "explanation" is 1-3 %[2]s sentences explaining the grammar point.
 
 For "comprehension":
 - Test whether the reader understood what actually happened or was said in the chunk — not one specific word or span.
 - Do not include "highlight" at all for this question (omit the field entirely) — this question is about the whole chunk, not one word or phrase.
-- "prompt" asks what the chunk conveys or what happened in it, in Japanese.
-- "explanation" is 1-3 Japanese sentences confirming what happened.
+- "prompt" asks what the chunk conveys or what happened in it, in %[2]s.
+- "explanation" is 1-3 %[2]s sentences confirming what happened.
 
 Rules that apply to all three:
-- "options" is always exactly %d entries, in Japanese, all distinct and all plausible — no throwaway wrong answers. Always list the correct option first, as options[0] ("answer_index": 0) — the client app randomizes the displayed order before showing it to the reader, so you don't need to vary or think about position.
+- "options" is always exactly %[3]d entries, in %[2]s, all distinct and all plausible — no throwaway wrong answers. Always list the correct option first, as options[0] ("answer_index": 0) — the client app randomizes the displayed order before showing it to the reader, so you don't need to vary or think about position.
 - Do not restate large portions of the passage inside any prompt — the passage itself is always visible to the reader alongside the question.
 
 Output ONLY a single JSON object with this exact shape, and nothing else — no prose, no explanation, no markdown code fences:
@@ -177,7 +194,8 @@ Output ONLY a single JSON object with this exact shape, and nothing else — no 
   {"type": "vocab", "prompt": "...", "options": ["...", "...", "...", "..."], "answer_index": 0, "explanation": "...", "highlight": "..."},
   {"type": "grammar", "prompt": "...", "options": ["...", "...", "...", "..."], "answer_index": 0, "explanation": "...", "highlight": "..."},
   {"type": "comprehension", "prompt": "...", "options": ["...", "...", "...", "..."], "answer_index": 0, "explanation": "..."}
-]}`, optionsPerQuestion)
+]}`, target, native, optionsPerQuestion)
+}
 
 // rawQuestion is the unvalidated shape read directly off the wire. Type
 // is a plain string here (not types.QuestionType) because an

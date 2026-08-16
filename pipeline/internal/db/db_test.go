@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"aidoku/pipeline/internal/catalog"
+	"aidoku/pipeline/internal/langpair"
 	"aidoku/pipeline/internal/types"
 )
 
@@ -41,11 +42,13 @@ func openTestStore(t *testing.T) (*Store, pgx.Tx, context.Context) {
 
 func testBook(gutenbergID int) Book {
 	return Book{
-		GutenbergID: gutenbergID,
-		Title:       "Test Book",
-		Author:      "Test Author",
-		SourceURL:   "https://example.com/test.txt",
-		Level:       catalog.LevelBookworm,
+		GutenbergID:    gutenbergID,
+		Title:          "Test Book",
+		Author:         "Test Author",
+		SourceURL:      "https://example.com/test.txt",
+		Level:          catalog.LevelBookworm,
+		TargetLanguage: langpair.EN_JP.Target,
+		NativeLanguage: langpair.EN_JP.Native,
 	}
 }
 
@@ -62,16 +65,34 @@ func TestNewBookFromEntry(t *testing.T) {
 		Level:       catalog.LevelScholar,
 	}
 
-	got := NewBookFromEntry(entry)
+	got := NewBookFromEntry(entry, langpair.JP_EN)
 	want := Book{
-		Title:       "The Vampyre",
-		Author:      "John William Polidori",
-		GutenbergID: 6087,
-		SourceURL:   "https://www.gutenberg.org/cache/epub/6087/pg6087.txt",
-		Level:       catalog.LevelScholar,
+		Title:          "The Vampyre",
+		Author:         "John William Polidori",
+		GutenbergID:    6087,
+		SourceURL:      "https://www.gutenberg.org/cache/epub/6087/pg6087.txt",
+		Level:          catalog.LevelScholar,
+		TargetLanguage: langpair.JP_EN.Target,
+		NativeLanguage: langpair.JP_EN.Native,
 	}
 	if got != want {
 		t.Errorf("NewBookFromEntry(%+v) = %+v, want %+v", entry, got, want)
+	}
+}
+
+func TestUpsertBook_RejectsMissingLanguagePair(t *testing.T) {
+	store, _, ctx := openTestStore(t)
+
+	b := testBook(900008)
+	b.TargetLanguage = ""
+	if _, err := store.UpsertBook(ctx, b); err == nil {
+		t.Fatal("UpsertBook with empty TargetLanguage = nil error, want an error")
+	}
+
+	b = testBook(900009)
+	b.NativeLanguage = ""
+	if _, err := store.UpsertBook(ctx, b); err == nil {
+		t.Fatal("UpsertBook with empty NativeLanguage = nil error, want an error")
 	}
 }
 

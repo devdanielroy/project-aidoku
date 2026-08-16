@@ -1,16 +1,15 @@
 // Package breakdown implements the third Claude API invocation step
-// (§3 stage 4.3): a full Japanese explanation of a chunk — sentence
-// structure, vocabulary, grammar, and meaning — shown to the learner
-// after they've answered its three questions. See AIDOKU_DESIGN.md §2
-// step 5 / §4.
+// (§3 stage 4.3): a full explanation of a chunk, in the learner's native
+// language — sentence structure, vocabulary, grammar, and meaning —
+// shown to the learner after they've answered its three questions. See
+// AIDOKU_DESIGN.md §2 step 5 / §4.
 //
 // Deliberately simpler than question generation (§7c): a chunk gets one
-// breakdown, a single free-form Japanese text blob (matching
-// db/schema.sql's breakdown.content and the Flutter app's
-// app/lib/models/breakdown.dart — Breakdown{id, content}), not a fixed
-// set of typed fields to unmarshal and validate. There's no JSON
-// envelope on the wire either: the model is asked to output the
-// Japanese text directly.
+// breakdown, a single free-form text blob (matching db/schema.sql's
+// breakdown.content and the Flutter app's app/lib/models/breakdown.dart
+// — Breakdown{id, content}), not a fixed set of typed fields to
+// unmarshal and validate. There's no JSON envelope on the wire either:
+// the model is asked to output the breakdown text directly.
 //
 // Same no-rule-based-fallback stance as question generation, and for
 // the same reason: writing a good explanation isn't mechanical, so
@@ -26,10 +25,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"regexp"
 	"strings"
 
 	"aidoku/pipeline/internal/anthropic"
+	"aidoku/pipeline/internal/langpair"
 	"aidoku/pipeline/internal/types"
 )
 
@@ -41,9 +40,9 @@ const (
 	DefaultModel = "claude-sonnet-5"
 
 	// DefaultMaxTokens bounds the LLM's response size. A full breakdown
-	// (multiple Japanese sections covering structure/vocab/grammar/
-	// meaning) runs longer than the three short questions in §7c, so
-	// this is double that stage's default.
+	// (multiple sections covering structure/vocab/grammar/meaning) runs
+	// longer than the three short questions in §7c, so this is double
+	// that stage's default.
 	DefaultMaxTokens = 4096
 
 	// maxRetries matches question generation (§7c) — one more than
@@ -61,18 +60,24 @@ type llmCaller interface {
 }
 
 // Generator runs the breakdown-generation stage: turning one chunk into
-// its full Japanese explanation.
+// its full breakdown, in the learner's native language.
 type Generator struct {
 	Client    llmCaller
 	Model     string      // defaults to DefaultModel if empty
 	MaxTokens int         // defaults to DefaultMaxTokens if zero
 	Logger    *log.Logger // defaults to log.Default() if nil; records failed attempts for review
+
+	// LanguagePair is required, not defaulted — GenerateBreakdown
+	// returns an error immediately if it's left unset, rather than
+	// silently assuming a pair. See langpair's package doc for why
+	// there's no default.
+	LanguagePair langpair.LanguagePair
 }
 
-// NewGenerator returns a Generator backed by client, using default
-// model/token/logger settings.
-func NewGenerator(client *anthropic.Client) *Generator {
-	return &Generator{Client: client}
+// NewGenerator returns a Generator backed by client and pair, using
+// default model/token/logger settings.
+func NewGenerator(client *anthropic.Client, pair langpair.LanguagePair) *Generator {
+	return &Generator{Client: client, LanguagePair: pair}
 }
 
 func (g *Generator) model() string {
@@ -96,16 +101,21 @@ func (g *Generator) logger() *log.Logger {
 	return log.Default()
 }
 
-// GenerateBreakdown produces chunk's full Japanese breakdown — the
-// content that goes straight into db.SaveBreakdown / the breakdown
-// table's content column. See the package doc for why a failure here is
-// a returned error, not a silent fallback.
+// GenerateBreakdown produces chunk's full breakdown — the content that
+// goes straight into db.SaveBreakdown / the breakdown table's content
+// column. See the package doc for why a failure here is a returned
+// error, not a silent fallback — including when LanguagePair itself was
+// never configured.
 func (g *Generator) GenerateBreakdown(ctx context.Context, chunk types.Chunk) (string, error) {
+	if g.LanguagePair.Target == "" || g.LanguagePair.Native == "" {
+		return "", fmt.Errorf("breakdown: Generator.LanguagePair is not set (see langpair.ByCode)")
+	}
+
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		content, err := g.callLLM(ctx, chunk)
 		if err == nil {
-			if err = validateBreakdown(content); err == nil {
+			if err = validateBreakdown(g.LanguagePair, content); err == nil {
 				return content, nil
 			}
 		}
@@ -124,7 +134,7 @@ func (g *Generator) callLLM(ctx context.Context, chunk types.Chunk) (string, err
 	resp, err := g.Client.CreateMessage(ctx, anthropic.MessagesRequest{
 		Model:     g.model(),
 		MaxTokens: g.maxTokens(),
-		System:    systemPrompt,
+		System:    buildSystemPrompt(g.LanguagePair),
 		Messages:  []anthropic.Message{{Role: "user", Content: string(payload)}},
 	})
 	if err != nil {
@@ -138,10 +148,19 @@ func (g *Generator) callLLM(ctx context.Context, chunk types.Chunk) (string, err
 	return strings.TrimSpace(text), nil
 }
 
-var systemPrompt = `You are a stage in an offline book-processing pipeline for a language-learning app. The learner is a Japanese speaker (L1) learning English (L2) through literature. You will receive a single JSON object describing one reading "chunk": {"index": <int>, "text": <string>, "char_count": <int>}. The learner has already read this chunk unassisted and answered three questions about it (vocab, grammar, comprehension). Your job is to write the full breakdown they see next: a thorough explanation of the passage, in Japanese.
+// buildSystemPrompt fixes what to cover and how to format it, in
+// pair.Native, quoting spans of the chunk's pair.Target text — see
+// AIDOKU_DESIGN.md §2 step 5 and §7's "i18n architecture" open question.
+func buildSystemPrompt(pair langpair.LanguagePair) string {
+	target, native := langpair.DisplayName(pair.Target), langpair.DisplayName(pair.Native)
+	example := ""
+	if pair.BreakdownExample != "" {
+		example = fmt.Sprintf("\n\nIllustrative example only — showing format, not content to reuse:\n%s", pair.BreakdownExample)
+	}
+	return fmt.Sprintf(`You are a stage in an offline book-processing pipeline for a language-learning app. The learner is a %[2]s speaker (L1) learning %[1]s (L2) through literature. You will receive a single JSON object describing one reading "chunk": {"index": <int>, "text": <string>, "char_count": <int>}. The learner has already read this chunk unassisted and answered three questions about it (vocab, grammar, comprehension). Your job is to write the full breakdown they see next: a thorough explanation of the passage, in %[2]s.
 
 Cover, as relevant to this specific chunk:
-- Sentence structure: how the sentence(s) are built — clauses, constructions, word order — quoting the exact English span you're explaining.
+- Sentence structure: how the sentence(s) are built — clauses, constructions, word order — quoting the exact %[1]s span you're explaining.
 - Vocabulary: notable or high-value words/phrases worth knowing, with their meaning as used here.
 - Grammar: patterns or constructions worth explaining (tense, modals, reported speech, inversion, conditionals, etc.).
 - Meaning/interpretation: what the passage actually conveys — including tone, irony, or subtext where present, not just a literal paraphrase.
@@ -150,45 +169,35 @@ Cover, as relevant to this specific chunk:
 Not every chunk needs every section. A short, grammatically simple chunk might only need a brief vocabulary and meaning note — match the depth of explanation to what the passage actually contains, don't pad it out.
 
 Format, matching this app's established house style:
-- Section headers in Japanese, wrapped in 【】 — use exactly these labels for these sections when you include them: 【文構造】 for sentence structure, 【語彙】 for vocabulary, 【文法】 for grammar, 【意味】 for meaning. Use a different 【...】 label only for a cultural/stylistic note that doesn't fit those four.
+- Section headers in %[2]s, exactly these labels for these sections when you include them: %[3]s for sentence structure, %[4]s for vocabulary, %[5]s for grammar, %[6]s for meaning. Use a different label in the same style only for a cultural/stylistic note that doesn't fit those four.
 - Separate sections with a blank line.
-- Quote exact English spans from the chunk's text in double quotes when referring to them.
+- Quote exact %[1]s spans from the chunk's text in double quotes when referring to them.
 - List multiple vocabulary items with a "・" bullet per item.
-- Write entirely in natural, explanatory Japanese — no English prose outside of quoted spans copied from the passage itself.
+- Write entirely in natural, explanatory %[2]s — no %[1]s prose outside of quoted spans copied from the passage itself.%[7]s
 
-Illustrative example only — showing format, not content to reuse:
-【文構造】"It is a truth universally acknowledged, that ..." は "It is + 過去分詞 + that節" という形式主語構文で、「〜ということは広く認められた真実である」という意味です。
+Output ONLY the %[2]s breakdown text itself, and nothing else — no JSON, no markdown code fences, no %[1]s preamble, no meta-commentary before or after it.`,
+		target, native,
+		pair.BreakdownSectionLabels[0], pair.BreakdownSectionLabels[1], pair.BreakdownSectionLabels[2], pair.BreakdownSectionLabels[3],
+		example,
+	)
+}
 
-【語彙】
-・acknowledged「認められている」
-・in want of a wife「妻を欲している」
-
-【文法】"must" は義務ではなく論理的な推測(「〜にちがいない」)を表します。
-
-【意味】表面上は一般論を装っていますが、実際には当時の結婚観への皮肉です。
-
-Output ONLY the Japanese breakdown text itself, and nothing else — no JSON, no markdown code fences, no English preamble, no meta-commentary before or after it.`
-
-// containsJapanese matches any Hiragana, Katakana, or CJK Unified
-// Ideograph rune — a cheap sanity check that the response is actually
-// written in Japanese, per the hard requirement in AIDOKU_DESIGN.md §2
-// step 5.
-var containsJapanese = regexp.MustCompile(`[\p{Hiragana}\p{Katakana}\p{Han}]`)
-
-// validateBreakdown confirms content is non-empty and genuinely contains
-// Japanese text. It deliberately does not check for the specific 【...】
-// section structure the system prompt asks for: which sections a given
-// chunk actually needs varies (see the prompt), so a rigid structural
-// check would reject legitimate, thinner breakdowns for simple chunks
-// along with genuinely malformed ones — better to catch those in the QA
-// pass (§3 stage 5) than to force every breakdown into the same shape
-// here.
-func validateBreakdown(content string) error {
+// validateBreakdown confirms content is non-empty and, if pair supplies
+// a ValidateNativeText, genuinely looks like it's written in
+// pair.Native. It deliberately does not check for the specific section
+// structure the system prompt asks for: which sections a given chunk
+// actually needs varies (see the prompt), so a rigid structural check
+// would reject legitimate, thinner breakdowns for simple chunks along
+// with genuinely malformed ones — better to catch those in the QA pass
+// (§3 stage 5) than to force every breakdown into the same shape here.
+func validateBreakdown(pair langpair.LanguagePair, content string) error {
 	if strings.TrimSpace(content) == "" {
 		return errors.New("empty breakdown")
 	}
-	if !containsJapanese.MatchString(content) {
-		return errors.New("breakdown does not appear to contain any Japanese text")
+	if pair.ValidateNativeText != nil {
+		if err := pair.ValidateNativeText(content); err != nil {
+			return err
+		}
 	}
 	return nil
 }

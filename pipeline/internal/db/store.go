@@ -5,39 +5,47 @@ import (
 	"fmt"
 
 	"aidoku/pipeline/internal/catalog"
+	"aidoku/pipeline/internal/langpair"
 	"aidoku/pipeline/internal/types"
 )
 
 // Book is the row-level shape UpsertBook writes. Its own type rather
 // than reusing catalog.Entry directly, since not every field lines up
-// one-to-one (Language/Status have no catalog equivalent and default
-// instead) — but every catalog.Entry field a Book needs now has a home
-// in it (see NewBookFromEntry).
+// one-to-one (TargetLanguage/NativeLanguage/Status have no catalog
+// equivalent — a catalog file's entries are all one pair, supplied by
+// whoever's calling NewBookFromEntry, not per-entry) — but every
+// catalog.Entry field a Book needs now has a home in it.
 type Book struct {
 	GutenbergID int
 	Title       string
 	Author      string
 	SourceURL   string
 	Level       catalog.ReadingLevel
-	// Language defaults to "en" if empty. Status defaults to
-	// "processing" if empty (see db/schema.sql's CHECK constraint for
-	// the only other allowed value, "published").
-	Language string
-	Status   string
+	// TargetLanguage/NativeLanguage are ISO 639-1 codes (langpair.
+	// LanguagePair.Target/Native, e.g. "en"/"ja") and required — see
+	// db/schema.sql's comment on why there's no default. Status
+	// defaults to "processing" if empty (see db/schema.sql's CHECK
+	// constraint for the only other allowed value, "published").
+	TargetLanguage string
+	NativeLanguage string
+	Status         string
 }
 
-// NewBookFromEntry builds a Book from a catalog.Entry — the normal way
-// to get one, now that books.txt's format carries title and author (see
-// the README's "Adding a Book to the Catalog" guide). Language and
-// Status are left at their zero values; UpsertBook defaults them to
-// "en" and "processing".
-func NewBookFromEntry(e catalog.Entry) Book {
+// NewBookFromEntry builds a Book from a catalog.Entry and the pair that
+// catalog file is for (every entry in one catalog file shares the same
+// pair — see cmd/process's -pair flag) — the normal way to get one, now
+// that a catalog file's format carries title and author (see the
+// README's "Adding a Book to the Catalog" guide). Status is left at its
+// zero value; UpsertBook defaults it to "processing".
+func NewBookFromEntry(e catalog.Entry, pair langpair.LanguagePair) Book {
 	return Book{
-		GutenbergID: e.GutenbergID,
-		Title:       e.Title,
-		Author:      e.Author,
-		SourceURL:   e.SourceURL,
-		Level:       e.Level,
+		GutenbergID:    e.GutenbergID,
+		Title:          e.Title,
+		Author:         e.Author,
+		SourceURL:      e.SourceURL,
+		Level:          e.Level,
+		TargetLanguage: pair.Target,
+		NativeLanguage: pair.Native,
 	}
 }
 
@@ -47,27 +55,30 @@ func NewBookFromEntry(e catalog.Entry) Book {
 // db/schema.sql's comment on the unique constraint). Returns the row's
 // id either way.
 func (s *Store) UpsertBook(ctx context.Context, b Book) (int, error) {
-	language := orDefault(b.Language, "en")
 	status := orDefault(b.Status, "processing")
 
 	if !b.Level.Valid() {
 		return 0, fmt.Errorf("db: UpsertBook: level %d out of range, want 1-10 inclusive", b.Level)
 	}
+	if b.TargetLanguage == "" || b.NativeLanguage == "" {
+		return 0, fmt.Errorf("db: UpsertBook: TargetLanguage and NativeLanguage are both required (see langpair.ByCode)")
+	}
 
 	const q = `
-		INSERT INTO book (gutenberg_id, title, author, source_url, level, language, status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO book (gutenberg_id, title, author, source_url, level, target_language, native_language, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (gutenberg_id) DO UPDATE SET
 			title = EXCLUDED.title,
 			author = EXCLUDED.author,
 			source_url = EXCLUDED.source_url,
 			level = EXCLUDED.level,
-			language = EXCLUDED.language,
+			target_language = EXCLUDED.target_language,
+			native_language = EXCLUDED.native_language,
 			status = EXCLUDED.status
 		RETURNING id`
 
 	var id int
-	err := s.db.QueryRow(ctx, q, b.GutenbergID, b.Title, b.Author, b.SourceURL, int(b.Level), language, status).Scan(&id)
+	err := s.db.QueryRow(ctx, q, b.GutenbergID, b.Title, b.Author, b.SourceURL, int(b.Level), b.TargetLanguage, b.NativeLanguage, status).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("db: UpsertBook: %w", err)
 	}
