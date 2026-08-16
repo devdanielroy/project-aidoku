@@ -3,16 +3,20 @@ import 'package:flutter/material.dart';
 import '../data/book_content_repository.dart';
 import '../data/local_progress_store.dart';
 import '../data/local_score_store.dart';
+import '../data/local_settings_store.dart';
 import '../data/progress_store.dart';
 import '../data/score_store.dart';
+import '../data/settings_store.dart';
 import '../models/book.dart';
+import '../models/language_pair.dart';
+import '../models/user_settings.dart';
 import 'reading_session_screen.dart';
+import 'settings_screen.dart';
 
-/// Step 1 of the core loop (AIDOKU_DESIGN.md §2): pick a book, filtered by
-/// level. Only one real book exists so far, so this is a minimal
-/// stand-in for a real library/catalog screen — enough to prove the
-/// "pick a book, then read it" flow exists against the real
-/// book-content service.
+/// Step 1 of the core loop (AIDOKU_DESIGN.md §2): pick a book, filtered
+/// to the reader's active study language (see UserSettings/
+/// SettingsScreen) — a Duolingo-style top-level language choice, not a
+/// per-book picker.
 class LibraryScreen extends StatefulWidget {
   /// Overridable for tests (a BookContentRepository wired to a fake HTTP
   /// transport — see test/fixtures/) — defaults to the real thing,
@@ -29,16 +33,24 @@ class LibraryScreen extends StatefulWidget {
   /// comment for why this is a separate interface from ProgressStore.
   final ScoreStore? scoreStore;
 
+  /// Overridable for tests (an in-memory fake — see test/fixtures/) —
+  /// defaults to this device's local storage. See SettingsStore's own
+  /// doc comment for why this is an interface.
+  final SettingsStore? settingsStore;
+
   const LibraryScreen({
     super.key,
     this.repository,
     this.progressStore,
     this.scoreStore,
+    this.settingsStore,
   });
 
   @override
   State<LibraryScreen> createState() => _LibraryScreenState();
 }
+
+typedef _LibraryData = ({List<Book> books, UserSettings settings});
 
 class _LibraryScreenState extends State<LibraryScreen> {
   late final BookContentRepository _repository =
@@ -46,14 +58,57 @@ class _LibraryScreenState extends State<LibraryScreen> {
   late final ProgressStore _progressStore =
       widget.progressStore ?? LocalProgressStore();
   late final ScoreStore _scoreStore = widget.scoreStore ?? LocalScoreStore();
-  late final Future<List<Book>> _booksFuture = _repository.getBooks();
+  late final SettingsStore _settingsStore =
+      widget.settingsStore ?? LocalSettingsStore();
+
+  // Mutable (not `late final`) and reassigned in _openSettings once
+  // Settings returns — same staleness fix as _BookCard's own futures
+  // below: a language switch there has to be reflected here without
+  // needing this screen to be recreated from scratch.
+  late Future<_LibraryData> _dataFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _dataFuture = _load();
+  }
+
+  Future<_LibraryData> _load() async {
+    final books = await _repository.getBooks();
+    final settings = await _settingsStore.getSettings();
+    return (books: books, settings: resolveActiveSettings(settings, books));
+  }
+
+  Future<void> _openSettings() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SettingsScreen(
+          repository: _repository,
+          settingsStore: _settingsStore,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    setState(() {
+      _dataFuture = _load();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Aidoku")),
-      body: FutureBuilder<List<Book>>(
-        future: _booksFuture,
+      appBar: AppBar(
+        title: const Text("Aidoku"),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'Settings',
+            onPressed: _openSettings,
+          ),
+        ],
+      ),
+      body: FutureBuilder<_LibraryData>(
+        future: _dataFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
@@ -63,10 +118,37 @@ class _LibraryScreenState extends State<LibraryScreen> {
               child: Text('Failed to load books: ${snapshot.error}'),
             );
           }
-          final books = snapshot.data!;
-          if (books.isEmpty) {
+          final data = snapshot.data!;
+          if (data.books.isEmpty) {
             return const Center(child: Text('No books published yet.'));
           }
+
+          final settings = data.settings;
+          if (settings.nativeLanguage == null ||
+              settings.activeStudyLanguage == null) {
+            return _LibraryEmptyState(
+              message: 'Pick a language to start learning.',
+              onOpenSettings: _openSettings,
+            );
+          }
+
+          final books = data.books
+              .where(
+                (b) =>
+                    b.targetLanguage == settings.activeStudyLanguage &&
+                    b.nativeLanguage == settings.nativeLanguage,
+              )
+              .toList();
+          if (books.isEmpty) {
+            return _LibraryEmptyState(
+              message:
+                  'No books published yet for '
+                  '${languageDisplayName(settings.activeStudyLanguage!)} '
+                  '(from ${languageDisplayName(settings.nativeLanguage!)}).',
+              onOpenSettings: _openSettings,
+            );
+          }
+
           return ListView.separated(
             padding: const EdgeInsets.all(16),
             itemCount: books.length,
@@ -79,6 +161,41 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Shown in place of the book list whenever there's nothing to show
+/// because of the reader's language settings, not because book-content
+/// has no published books at all — no active language chosen yet, or
+/// one is chosen but nothing's published for it. Either way, the fix is
+/// the same: go to Settings.
+class _LibraryEmptyState extends StatelessWidget {
+  final String message;
+  final VoidCallback onOpenSettings;
+
+  const _LibraryEmptyState({
+    required this.message,
+    required this.onOpenSettings,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(message, textAlign: TextAlign.center),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: onOpenSettings,
+              child: const Text('Open Settings'),
+            ),
+          ],
+        ),
       ),
     );
   }

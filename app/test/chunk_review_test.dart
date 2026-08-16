@@ -18,6 +18,7 @@ import 'package:aidoku/screens/library_screen.dart';
 import 'fixtures/fake_book_content.dart';
 import 'fixtures/fake_progress_store.dart';
 import 'fixtures/fake_score_store.dart';
+import 'fixtures/fake_settings_store.dart';
 
 const _wrongAnswers = ['denied', 'obligation', 'a legal requirement'];
 
@@ -35,6 +36,7 @@ void main() {
             repository: BookContentRepository(client: fakeBookContentClient()),
             progressStore: progressStore,
             scoreStore: scoreStore,
+            settingsStore: FakeSettingsStore(),
           ),
         ),
       );

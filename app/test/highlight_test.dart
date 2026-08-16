@@ -12,6 +12,7 @@ import 'package:aidoku/screens/library_screen.dart';
 import 'fixtures/fake_book_content.dart';
 import 'fixtures/fake_progress_store.dart';
 import 'fixtures/fake_score_store.dart';
+import 'fixtures/fake_settings_store.dart';
 
 void main() {
   testWidgets(
@@ -23,6 +24,7 @@ void main() {
             repository: BookContentRepository(client: fakeBookContentClient()),
             progressStore: FakeProgressStore(),
             scoreStore: FakeScoreStore(),
+            settingsStore: FakeSettingsStore(),
           ),
         ),
       );

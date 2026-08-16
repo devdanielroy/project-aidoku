@@ -24,6 +24,25 @@ const testBook = {
   'status': 'published',
 };
 
+/// A second book in the opposite language pair from testBook — only
+/// used by tests that need more than one available pair (see
+/// language_pair_test.dart / settings_screen_test.dart /
+/// library_screen_test.dart's filtering cases). Deliberately not
+/// wired into testChunks/_questionsByChunk/_breakdownByChunk below —
+/// nothing exercises reading this book, only its presence in the
+/// /aidoku/books listing.
+const testBookOtherPair = {
+  'id': 2,
+  'gutenberg_id': 2,
+  'title': 'Other Pair Book',
+  'author': 'Other Author',
+  'source_url': 'https://example.com/other.txt',
+  'level': 3,
+  'target_language': 'ja',
+  'native_language': 'en',
+  'status': 'published',
+};
+
 const testChunks = [
   {
     'id': 101,
@@ -213,14 +232,22 @@ const _breakdownByChunk = {
 
 /// An http.Client whose responses are these fixtures — pass to
 /// BookContentRepository(client: fakeBookContentClient()) in tests.
-http.Client fakeBookContentClient() {
+///
+/// [books] overrides what GET /aidoku/books returns — defaults to just
+/// testBook (every existing test's assumption), but a test exercising
+/// language-pair filtering/selection (SettingsScreen, LibraryScreen's
+/// empty states) can pass [testBook, testBookOtherPair] to make more
+/// than one pair available. Every other endpoint stays tied to
+/// testBook/testChunks regardless — nothing needs to actually read
+/// testBookOtherPair's content.
+http.Client fakeBookContentClient({
+  List<Map<String, dynamic>> books = const [testBook],
+}) {
   return MockClient((request) async {
     final path = request.url.path;
 
     if (path == '/aidoku/books') {
-      return _ok({
-        'books': [testBook],
-      });
+      return _ok({'books': books});
     }
     if (RegExp(r'^/aidoku/book/\d+$').hasMatch(path)) {
       return _ok(testBook);
