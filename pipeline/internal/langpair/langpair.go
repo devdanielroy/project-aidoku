@@ -20,6 +20,7 @@ package langpair
 import (
 	"fmt"
 	"regexp"
+	"unicode"
 )
 
 // LanguagePair bundles everything question/breakdown's prompts need to
@@ -63,6 +64,18 @@ type LanguagePair struct {
 	// alone, and there's nothing wrong with relying on the human QA pass
 	// (AIDOKU_DESIGN.md §3 stage 5) for those instead.
 	ValidateNativeText func(text string) error
+
+	// TargetChunkChars/ChunkCharTolerance are Stage B's (internal/chunk)
+	// soft target chunk length and tolerance, in Target characters — see
+	// AIDOKU_DESIGN.md §3a. Plain character counts, chosen by feel per
+	// pair rather than derived from anything (same as EN_JP's original
+	// 240±60 — see internal/chunk's own history): different languages
+	// pack a different amount of reading content into the same number of
+	// characters (Japanese has no spaces and dense kanji compounds), so
+	// a count calibrated for one language's prose doesn't transfer
+	// directly to another's.
+	TargetChunkChars   int
+	ChunkCharTolerance int
 }
 
 // ByCode is every language pair the pipeline currently supports, keyed
@@ -95,6 +108,8 @@ var EN_JP = LanguagePair{
 
 【意味】表面上は一般論を装っていますが、実際には当時の結婚観への皮肉です。`,
 	ValidateNativeText: validateContainsJapanese,
+	TargetChunkChars:   240,
+	ChunkCharTolerance: 60,
 }
 
 // JP_EN: the reverse of EN_JP — the learner's native language is
@@ -119,6 +134,14 @@ var JP_EN = LanguagePair{
 	// model didn't just ignore instructions and answer in Japanese
 	// (the Target language) anyway still catches the real failure mode.
 	ValidateNativeText: validateNotJapanese,
+	// 140±35: a first guess, same "picked by feel, see where it gets
+	// us" basis as EN_JP's 240±60 — Japanese has no spaces and denser
+	// kanji compounds, so a lower character count is a reasonable
+	// starting point for a comparable amount of reading content, not a
+	// principled conversion. Revisit once there's real JP_EN chunked
+	// output to judge against (see AIDOKU_DESIGN.md §3a).
+	TargetChunkChars:   140,
+	ChunkCharTolerance: 35,
 }
 
 // displayNames maps the ISO 639-1 codes LanguagePair.Target/Native use
@@ -156,12 +179,47 @@ func validateContainsJapanese(text string) error {
 	return nil
 }
 
+// japaneseRatioThreshold is validateNotJapanese's failure threshold —
+// the fraction of Japanese-script-vs-Latin letters that must be
+// Japanese before it treats text as still being in Japanese rather than
+// English. Not zero-tolerance: breakdown's own prompt requires quoting
+// exact Japanese (Target) spans verbatim inside the English (Native)
+// explanation (see breakdown.go's "Quote exact spans" rule), so a
+// handful of legitimately-quoted Japanese characters is expected and
+// must not trip this — only a response that's substantially still in
+// Japanese, the real failure mode this guards against (the model
+// ignoring instructions and answering in Target instead of Native),
+// should. Only counting letters (not punctuation, brackets, or digits)
+// in the denominator matters here: this pair's own house style uses
+// Japanese-style brackets in quoted spans (e.g. 「」), which would
+// otherwise dilute a genuine "still all in Japanese" response's ratio
+// as much as a compliant one's, defeating the point. 0.3 comfortably
+// separates a compliant breakdown (one or two short quoted words/
+// sentences against several sentences of English prose — well under
+// 10% in practice) from one that's substantially still in Japanese
+// (typically at or near 100%, since a non-compliant response has no
+// reason to include English words at all).
+const japaneseRatioThreshold = 0.3
+
 // validateNotJapanese is JP_EN's ValidateNativeText — see its own doc
 // comment for why this checks the opposite direction from
-// validateContainsJapanese.
+// validateContainsJapanese, and japaneseRatioThreshold's for why it's a
+// ratio rather than an absolute "any Japanese at all" check.
 func validateNotJapanese(text string) error {
-	if containsJapanese.MatchString(text) {
-		return fmt.Errorf("text appears to still be in Japanese, not English")
+	var japanese, latin int
+	for _, r := range text {
+		switch {
+		case unicode.In(r, unicode.Hiragana, unicode.Katakana, unicode.Han):
+			japanese++
+		case unicode.Is(unicode.Latin, r):
+			latin++
+		}
+	}
+	if japanese+latin == 0 {
+		return nil // no letters at all to judge; empty content is validateBreakdown's job
+	}
+	if ratio := float64(japanese) / float64(japanese+latin); ratio > japaneseRatioThreshold {
+		return fmt.Errorf("text appears to still be substantially in Japanese, not English (%.0f%% Japanese-script letters)", ratio*100)
 	}
 	return nil
 }

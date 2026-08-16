@@ -176,6 +176,12 @@ func TestBuildSystemPrompt_ReflectsThePairPassedIn(t *testing.T) {
 	if enJP == jpEN {
 		t.Error("EN_JP and JP_EN produced identical prompts, want them to differ")
 	}
+
+	for _, p := range []string{enJP, jpEN} {
+		if !strings.Contains(p, "never translated") {
+			t.Errorf("prompt doesn't warn the model against translating quoted spans: %s", p)
+		}
+	}
 }
 
 func TestGenerateBreakdown_FailsAfterExhaustingRetries(t *testing.T) {

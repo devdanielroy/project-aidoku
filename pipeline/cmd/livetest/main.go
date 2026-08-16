@@ -88,7 +88,7 @@ func main() {
 	defer cancel()
 
 	fmt.Println("=== Stage B: chunk grouping (1 real API call, claude-sonnet-5) ===")
-	grouper := chunk.NewGrouper(client)
+	grouper := chunk.NewGrouper(client, pair)
 	groupingResp, err := grouper.GroupSentencesIntoChunks(ctx, sentences)
 	if err != nil {
 		log.Fatalf("livetest: chunk grouping: %v", err)

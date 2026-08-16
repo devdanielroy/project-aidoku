@@ -196,6 +196,7 @@ go run ./book-content/cmd/server        # listens on :8080
 - [x] Resume progress (`ProgressStore`/`LocalProgressStore`, `lib/data/`) — device-local for now (`shared_preferences`), deliberately behind an interface so an account-backed implementation can swap in later (see AIDOKU_DESIGN.md §4's `UserProgress` sketch) without `LibraryScreen`/`ReadingSessionScreen` changing. Saves the current chunk index on every chunk change, clears it once a book is finished, and falls back to the start on a stale/out-of-range saved index. Library cards show a real progress bar + "Chunk N of M" once a book has saved progress.
 - [x] Score tracking (`ScoreStore`/`LocalScoreStore`, `lib/data/`) — correct/incorrect history per question, device-local for now (same pattern as `ProgressStore`, kept as a separate interface — see its doc comment). Surfaced as an accuracy percentage on library cards and a full correct/total tally on `CompleteView`.
 - [x] Chunk review — an app bar icon on the reading screen opens a scrollable list of every cleared chunk, each row a teaser + a soft green/red tint and tick/cross icon for pass/fail, derived from `ScoreStore` — no new persistence needed. Tapping a row opens that chunk again — read → questions → breakdown, reusing `ChunkPanel` as-is. A chunk that was already fully correct opens *pre-answered* (every question shown already on its correct option, via `QuestionsView.startAnswered`); only a chunk with something wrong is a real interactive redo, which records to `ScoreStore` (overwriting the earlier attempt) same as before. Finishing one chunk auto-advances to the next reviewable one, same as the main flow, and returns to the list once there's nothing further to review. New backend endpoint proivides per chunk — previews, truncated server-side to the first sentence.
+- [x] Pipeline i18n — every pipeline run now picks an explicit `LanguagePair` (`internal/langpair`, ISO 639-1 codes, no default); `book.target_language`/`native_language` replace the old single `language` column. Added JP_EN (Japanese → English) alongside the shipped EN_JP: per-language Stage A segmentation and Clean-stage dewrapping (`segment_japanese.go`, `clean_japanese.go`), pair-scoped chunk sizing, and explicit anti-translation instructions across all three LLM prompts. `cmd/process` now resumes from already-persisted chunks/questions/breakdowns instead of re-paying for work a prior run already finished in case of interrupted processing.
 
 **Next up**
 - [ ] Chapter boundary detection (deliberately deferred to the chunk-grouping stage — see design doc §7)
@@ -226,18 +227,18 @@ Each catalog file's own header comment carries this same spec, kept in sync — 
 
 Each book is assigned a reading comprehension level manually, by me, corresponding to one of the ten levels below:
 
-| # | Level Name | TOEIC Range | CEFR |
-|---|------------|-------------|------|
-| 1 | Initiate   | 10–120      | Pre-A1 |
-| 2 | Novice     | 120–224     | A1 |
-| 3 | Apprentice | 225–384     | A2 (low) |
-| 4 | Reader     | 385–549     | A2 (high) |
-| 5 | Bookworm   | 550–664     | B1 (low) |
-| 6 | Erudite    | 665–784     | B1 (high) |
-| 7 | Virtuoso   | 785–859     | B2 (low) |
-| 8 | Luminary   | 860–944     | B2 (high) |
-| 9 | Academic   | 945–965     | C1 (low) |
-| 10 | Scholar   | 966–990     | C1 (high) |
+| # | Level Name | CEFR      |
+|---|------------|-----------|
+| 1 | Initiate   | Pre-A1    |
+| 2 | Novice     | A1        |
+| 3 | Apprentice | A2 (low)  |
+| 4 | Reader     | A2 (high) |
+| 5 | Bookworm   | B1 (low)  |
+| 6 | Erudite    | B1 (high) |
+| 7 | Virtuoso   | B2 (low)  |
+| 8 | Luminary   | B2 (high) |
+| 9 | Academic   | C1 (low)  |
+| 10 | Scholar   | C1 (high) |
 
 Recorded as a `Level=` line in a catalog file (see [`pipeline/catalogs/`](./pipeline/catalogs)), parsed into a `catalog.ReadingLevel` enum by `pipeline/internal/catalog` — not computed by the pipeline itself.
 

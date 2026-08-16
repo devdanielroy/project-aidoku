@@ -17,15 +17,11 @@ import (
 	"log"
 
 	"aidoku/pipeline/internal/anthropic"
+	"aidoku/pipeline/internal/langpair"
 	"aidoku/pipeline/internal/types"
 )
 
 const (
-	// TargetChunkChars and ChunkCharTolerance mirror the ~240±60 char soft
-	// target from AIDOKU_DESIGN.md §3a.
-	TargetChunkChars   = 240
-	ChunkCharTolerance = 60
-
 	// DefaultModel is used when Grouper.Model is empty. Chunk grouping is a
 	// reasoning task run once per book, not per user, so a stronger model
 	// is worth it — see AIDOKU_DESIGN.md §7a.
@@ -57,12 +53,20 @@ type Grouper struct {
 	Model     string      // defaults to DefaultModel if empty
 	MaxTokens int         // defaults to DefaultMaxTokens if zero
 	Logger    *log.Logger // defaults to log.Default() if nil; records fallback events for later review
+
+	// LanguagePair is required, not defaulted — GroupSentencesIntoChunks
+	// returns an error immediately if it's left unset, rather than
+	// silently assuming a pair. Supplies the target chunk length both
+	// the LLM prompt and the GreedyGroup fallback aim for
+	// (LanguagePair.TargetChunkChars/ChunkCharTolerance) — see
+	// langpair's package doc for why there's no default.
+	LanguagePair langpair.LanguagePair
 }
 
-// NewGrouper returns a Grouper backed by client, using default
+// NewGrouper returns a Grouper backed by client and pair, using default
 // model/token/logger settings.
-func NewGrouper(client *anthropic.Client) *Grouper {
-	return &Grouper{Client: client}
+func NewGrouper(client *anthropic.Client, pair langpair.LanguagePair) *Grouper {
+	return &Grouper{Client: client, LanguagePair: pair}
 }
 
 func (g *Grouper) model() string {
@@ -92,11 +96,15 @@ func (g *Grouper) logger() *log.Logger {
 // failure, and falls back to GreedyGroup if the LLM still hasn't produced a
 // valid grouping. See AIDOKU_DESIGN.md §7b.
 //
-// GroupSentencesIntoChunks itself never returns an error for LLM
-// failures — the fallback always succeeds — so a non-nil error here means
-// something is wrong with the input itself, not the LLM call. Fallback
-// events are logged (not returned as errors) so they can be reviewed.
+// GroupSentencesIntoChunks never returns an error for LLM failures — the
+// fallback always succeeds — so a non-nil error here means something is
+// wrong with the input itself (including LanguagePair never having been
+// configured), not the LLM call. Fallback events are logged (not
+// returned as errors) so they can be reviewed.
 func (g *Grouper) GroupSentencesIntoChunks(ctx context.Context, sentences []types.SentenceInput) (types.ChunkGroupingResponse, error) {
+	if g.LanguagePair.Target == "" || g.LanguagePair.Native == "" {
+		return types.ChunkGroupingResponse{}, fmt.Errorf("chunk: Grouper.LanguagePair is not set (see langpair.ByCode)")
+	}
 	if len(sentences) == 0 {
 		return types.ChunkGroupingResponse{}, nil
 	}
@@ -117,7 +125,7 @@ func (g *Grouper) GroupSentencesIntoChunks(ctx context.Context, sentences []type
 
 	g.logger().Printf("chunk: falling back to greedy grouping for %d sentence(s) (window starting at index %d) after LLM grouping failed: %v",
 		len(sentences), sentences[0].Index, lastErr)
-	return GreedyGroup(sentences), nil
+	return GreedyGroup(sentences, g.LanguagePair), nil
 }
 
 func (g *Grouper) callLLM(ctx context.Context, sentences []types.SentenceInput) (types.ChunkGroupingResponse, error) {
@@ -129,7 +137,7 @@ func (g *Grouper) callLLM(ctx context.Context, sentences []types.SentenceInput) 
 	resp, err := g.Client.CreateMessage(ctx, anthropic.MessagesRequest{
 		Model:     g.model(),
 		MaxTokens: g.maxTokens(),
-		System:    systemPrompt,
+		System:    buildSystemPrompt(g.LanguagePair),
 		Messages:  []anthropic.Message{{Role: "user", Content: string(payload)}},
 	})
 	if err != nil {
@@ -148,9 +156,14 @@ func (g *Grouper) callLLM(ctx context.Context, sentences []types.SentenceInput) 
 	return parsed, nil
 }
 
-// systemPrompt fixes the target chunk length, the sentence-boundary-only
-// rule, and the exact JSON output schema — see AIDOKU_DESIGN.md §7b.
-var systemPrompt = fmt.Sprintf(`You are a stage in an offline book-processing pipeline for a language-learning app. You will receive a JSON array of sentences from a window of a book. Each sentence has an "index" (its position in the book), its exact "text", and its "char_count".
+// buildSystemPrompt fixes the sentence-boundary-only rule and the exact
+// JSON output schema, parameterized by pair for the target chunk length
+// (pair.TargetChunkChars/ChunkCharTolerance) — see AIDOKU_DESIGN.md §7b
+// and §7i. Grouping itself doesn't otherwise vary by language (it never
+// sees Native at all — Stage B only ever reasons about where to cut
+// Target-language sentences), so pair only feeds in here.
+func buildSystemPrompt(pair langpair.LanguagePair) string {
+	return fmt.Sprintf(`You are a stage in an offline book-processing pipeline for a language-learning app. You will receive a JSON array of sentences from a window of a book. Each sentence has an "index" (its position in the book), its exact "text", and its "char_count".
 
 Your only job is to group these sentences into chunks, in order, targeting approximately %d characters per chunk. This is a soft target: a sentence is never split, so if a single sentence is longer than the target it becomes its own chunk; otherwise aim to keep chunks within roughly ±%d characters of the target.
 
@@ -159,10 +172,12 @@ Rules:
 - Each chunk's sentence_indices must be a contiguous, ascending run (e.g. [4,5,6], never [4,6] or [6,5,4]).
 - Chunks must be listed in ascending order and cover the input with no gaps and no overlaps — chunk 0 starts at the first sentence index, and each following chunk starts immediately after the previous chunk ends.
 - The input sentences are already correctly segmented, including dialogue: do not try to re-split or merge sentence text. You are only choosing where between sentences to cut chunks.
+- Never translate, paraphrase, or otherwise alter any sentence text — you never reproduce it in your output at all, only its index, so this should never come up, but do not let these instructions being in English tempt you into translating anything.
 - When a choice between two similarly-sized breaks is otherwise close, prefer the one that falls at a paragraph or topic boundary — but the character-count target takes priority over this preference.
 
 Output ONLY a single JSON object with this exact shape, and nothing else — no prose, no explanation, no markdown code fences:
-{"chunks": [{"chunk_index": 0, "sentence_indices": [0, 1, 2]}, {"chunk_index": 1, "sentence_indices": [3]}]}`, TargetChunkChars, ChunkCharTolerance)
+{"chunks": [{"chunk_index": 0, "sentence_indices": [0, 1, 2]}, {"chunk_index": 1, "sentence_indices": [3]}]}`, pair.TargetChunkChars, pair.ChunkCharTolerance)
+}
 
 // ValidatePartition confirms resp is a valid, complete, ordered partition
 // of sentences: every sentence index appears exactly once, indices within
@@ -212,10 +227,14 @@ func ValidatePartition(sentences []types.SentenceInput, resp types.ChunkGrouping
 
 // GreedyGroup is the deterministic rule-based fallback grouper: accumulate
 // sentences into the current chunk until adding the next one would exceed
-// TargetChunkChars+ChunkCharTolerance, then cut. A single sentence longer
-// than the limit still becomes its own chunk, since it's never rejected
-// from an empty chunk. See AIDOKU_DESIGN.md §3a.
-func GreedyGroup(sentences []types.SentenceInput) types.ChunkGroupingResponse {
+// pair.TargetChunkChars+ChunkCharTolerance, then cut. A single sentence
+// longer than the limit still becomes its own chunk, since it's never
+// rejected from an empty chunk. See AIDOKU_DESIGN.md §3a.
+//
+// Exported and called directly (not just via Grouper's fallback path),
+// so — unlike Grouper's methods — this doesn't itself validate that pair
+// is actually configured; callers are expected to pass a real one.
+func GreedyGroup(sentences []types.SentenceInput, pair langpair.LanguagePair) types.ChunkGroupingResponse {
 	if len(sentences) == 0 {
 		return types.ChunkGroupingResponse{}
 	}
@@ -233,7 +252,7 @@ func GreedyGroup(sentences []types.SentenceInput) types.ChunkGroupingResponse {
 		currentChars = 0
 	}
 
-	limit := TargetChunkChars + ChunkCharTolerance
+	limit := pair.TargetChunkChars + pair.ChunkCharTolerance
 	for _, s := range sentences {
 		if len(current) > 0 && currentChars+s.CharCount > limit {
 			flush()

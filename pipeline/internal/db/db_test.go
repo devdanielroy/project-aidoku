@@ -291,6 +291,112 @@ func TestSaveBreakdown_InsertAndUpdate(t *testing.T) {
 	}
 }
 
+func TestGetBookIDByGutenbergID_Found(t *testing.T) {
+	store, _, ctx := openTestStore(t)
+
+	id, err := store.UpsertBook(ctx, testBook(900010))
+	if err != nil {
+		t.Fatalf("UpsertBook: %v", err)
+	}
+
+	gotID, found, err := store.GetBookIDByGutenbergID(ctx, 900010)
+	if err != nil {
+		t.Fatalf("GetBookIDByGutenbergID: %v", err)
+	}
+	if !found {
+		t.Fatal("GetBookIDByGutenbergID found = false, want true")
+	}
+	if gotID != id {
+		t.Errorf("GetBookIDByGutenbergID id = %d, want %d", gotID, id)
+	}
+}
+
+func TestGetBookIDByGutenbergID_NotFound(t *testing.T) {
+	store, _, ctx := openTestStore(t)
+
+	_, found, err := store.GetBookIDByGutenbergID(ctx, 999999999)
+	if err != nil {
+		t.Fatalf("GetBookIDByGutenbergID: %v", err)
+	}
+	if found {
+		t.Error("GetBookIDByGutenbergID found = true for a gutenberg_id that was never saved, want false")
+	}
+}
+
+func TestLoadChunkProgress_ReflectsQuestionsAndBreakdownState(t *testing.T) {
+	store, _, ctx := openTestStore(t)
+
+	bookID, err := store.UpsertBook(ctx, testBook(900011))
+	if err != nil {
+		t.Fatalf("UpsertBook: %v", err)
+	}
+
+	// Chunk 0: grouped only, no questions/breakdown yet — the state
+	// groupAllChunks (cmd/process) leaves a chunk in.
+	if _, err := store.SaveChunk(ctx, bookID, types.Chunk{Index: 0, Text: "chunk zero", CharCount: 10}, nil); err != nil {
+		t.Fatalf("SaveChunk (chunk 0): %v", err)
+	}
+
+	// Chunk 1: has questions, but breakdown generation hasn't run yet.
+	chunk1ID, err := store.SaveChunk(ctx, bookID, types.Chunk{Index: 1, Text: "chunk one", CharCount: 9}, testQuestions())
+	if err != nil {
+		t.Fatalf("SaveChunk (chunk 1): %v", err)
+	}
+
+	// Chunk 2: fully complete — questions and breakdown both saved.
+	chunk2ID, err := store.SaveChunk(ctx, bookID, types.Chunk{Index: 2, Text: "chunk two", CharCount: 9}, testQuestions())
+	if err != nil {
+		t.Fatalf("SaveChunk (chunk 2): %v", err)
+	}
+	if err := store.SaveBreakdown(ctx, chunk2ID, "breakdown for chunk two"); err != nil {
+		t.Fatalf("SaveBreakdown (chunk 2): %v", err)
+	}
+
+	progress, err := store.LoadChunkProgress(ctx, bookID)
+	if err != nil {
+		t.Fatalf("LoadChunkProgress: %v", err)
+	}
+	if len(progress) != 3 {
+		t.Fatalf("LoadChunkProgress returned %d chunk(s), want 3", len(progress))
+	}
+
+	// Index order, not insertion order — SaveChunk calls above were
+	// already in order, but the query's own ORDER BY is what's being
+	// verified here.
+	if progress[0].Chunk.Index != 0 || progress[0].HasQuestions || progress[0].HasBreakdown {
+		t.Errorf("chunk 0 progress = %+v, want Index=0, HasQuestions=false, HasBreakdown=false", progress[0])
+	}
+	if progress[1].Chunk.Index != 1 || !progress[1].HasQuestions || progress[1].HasBreakdown {
+		t.Errorf("chunk 1 progress = %+v, want Index=1, HasQuestions=true, HasBreakdown=false", progress[1])
+	}
+	if progress[1].ID != chunk1ID {
+		t.Errorf("chunk 1 progress.ID = %d, want %d", progress[1].ID, chunk1ID)
+	}
+	if progress[2].Chunk.Index != 2 || !progress[2].HasQuestions || !progress[2].HasBreakdown {
+		t.Errorf("chunk 2 progress = %+v, want Index=2, HasQuestions=true, HasBreakdown=true", progress[2])
+	}
+	if progress[2].Chunk.Text != "chunk two" || progress[2].Chunk.CharCount != 9 {
+		t.Errorf("chunk 2 progress.Chunk = %+v, want the saved text/char_count preserved", progress[2].Chunk)
+	}
+}
+
+func TestLoadChunkProgress_NoChunksYet(t *testing.T) {
+	store, _, ctx := openTestStore(t)
+
+	bookID, err := store.UpsertBook(ctx, testBook(900012))
+	if err != nil {
+		t.Fatalf("UpsertBook: %v", err)
+	}
+
+	progress, err := store.LoadChunkProgress(ctx, bookID)
+	if err != nil {
+		t.Fatalf("LoadChunkProgress: %v", err)
+	}
+	if len(progress) != 0 {
+		t.Errorf("LoadChunkProgress for a book with no chunks = %d entries, want 0", len(progress))
+	}
+}
+
 // TestDeleteBook_CascadesToChunksQuestionsAndBreakdowns confirms
 // db/schema.sql's ON DELETE CASCADE actually cascades, not just that it
 // was declared.

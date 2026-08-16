@@ -32,3 +32,10 @@
 # guide. Both the first-line and last-line strings must match exactly
 # once in the cleaned text - if a book's chosen anchor isn't unique, pick
 # a longer/more specific line.
+
+羅生門
+芥川 龍之介
+https://www.gutenberg.org/cache/epub/1982/pg1982.txt
+或日の暮方の事である。
+下人は、既に、雨を冒して、京都の町へ強盗を働きに急いでいた。
+Level=10

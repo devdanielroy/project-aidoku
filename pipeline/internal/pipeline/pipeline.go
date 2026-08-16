@@ -18,17 +18,27 @@ type textFetcher interface {
 	FetchText(ctx context.Context, url string) (string, error)
 }
 
+// CleanFunc is the shape of clean.Clean and its per-language siblings
+// (clean.CleanJapanese, etc.) — see internal/clean. PrepareBook takes
+// one explicitly rather than hardcoding clean.Clean, so the caller
+// picks the language-appropriate variant for whichever catalog/pair
+// it's running (see cmd/process and cmd/ingest, both of which dispatch
+// on their -pair flag) instead of this package needing to know
+// anything about language pairs itself.
+type CleanFunc = func(raw string) (string, error)
+
 // PrepareBook fetches entry's source text, strips Project Gutenberg's
-// wrapper and normalizes it (clean.Clean), then trims it down to just the
+// wrapper and normalizes it (cleanFn), then trims it down to just the
 // novel content using entry's anchors (clean.Trim). The result is the
-// final text for this book, ready to hand to Stage A (segment.Segment).
-func PrepareBook(ctx context.Context, fetcher textFetcher, entry catalog.Entry) (string, error) {
+// final text for this book, ready to hand to Stage A (segment.Segment
+// or segment.SegmentJapanese — same per-caller dispatch as cleanFn).
+func PrepareBook(ctx context.Context, fetcher textFetcher, entry catalog.Entry, cleanFn CleanFunc) (string, error) {
 	raw, err := fetcher.FetchText(ctx, entry.SourceURL)
 	if err != nil {
 		return "", fmt.Errorf("pipeline: book %d: fetch: %w", entry.GutenbergID, err)
 	}
 
-	cleaned, err := clean.Clean(raw)
+	cleaned, err := cleanFn(raw)
 	if err != nil {
 		return "", fmt.Errorf("pipeline: book %d: clean: %w", entry.GutenbergID, err)
 	}

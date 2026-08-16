@@ -12,7 +12,7 @@ func TestCondenseIllustrations_CaptionAndCopyright(t *testing.T) {
 		"“He came down to see the place”\n\n" +
 		"[_Copyright 1894 by George Allen._]]"
 
-	got, err := condenseIllustrations(raw)
+	got, err := condenseIllustrations(raw, " ")
 	if err != nil {
 		t.Fatalf("condenseIllustrations: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestCondenseIllustrations_CaptionOnly(t *testing.T) {
 		"“He rode a black horse”\n\n" +
 		"]"
 
-	got, err := condenseIllustrations(raw)
+	got, err := condenseIllustrations(raw, " ")
 	if err != nil {
 		t.Fatalf("condenseIllustrations: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestCondenseIllustrations_DecorativeTextNoCaptionStructure(t *testing.T) {
 		"                                LONDON\n" +
 		"                                   ]"
 
-	got, err := condenseIllustrations(raw)
+	got, err := condenseIllustrations(raw, " ")
 	if err != nil {
 		t.Fatalf("condenseIllustrations: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestCondenseIllustrations_SurroundingTextPreserved(t *testing.T) {
 		"[Illustration:\n\n“A caption”\n\n]" +
 		"\n\nSome prose after."
 
-	got, err := condenseIllustrations(raw)
+	got, err := condenseIllustrations(raw, " ")
 	if err != nil {
 		t.Fatalf("condenseIllustrations: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestCondenseIllustrations_SurroundingTextPreserved(t *testing.T) {
 func TestCondenseIllustrations_MultipleBlocks(t *testing.T) {
 	raw := "[Illustration:\n\nFirst\n\n] and later [Illustration:\n\nSecond\n\n]"
 
-	got, err := condenseIllustrations(raw)
+	got, err := condenseIllustrations(raw, " ")
 	if err != nil {
 		t.Fatalf("condenseIllustrations: %v", err)
 	}
@@ -87,9 +87,29 @@ func TestCondenseIllustrations_MultipleBlocks(t *testing.T) {
 	}
 }
 
+// TestCondenseIllustrations_JapaneseWordJoin catches the same class of
+// bug dewrapParagraphs had before wordJoin existed: a caption wrapped
+// across multiple lines must be rejoined with "" for Japanese, not a
+// literal " " that would insert a spurious space mid-word.
+func TestCondenseIllustrations_JapaneseWordJoin(t *testing.T) {
+	raw := "[Illustration:\n\n" +
+		"下人は\n" +
+		"雨を見ていた\n\n" +
+		"]"
+
+	got, err := condenseIllustrations(raw, "")
+	if err != nil {
+		t.Fatalf("condenseIllustrations: %v", err)
+	}
+	want := "[Illustration:下人は雨を見ていた]"
+	if got != want {
+		t.Errorf("condenseIllustrations() = %q, want %q", got, want)
+	}
+}
+
 func TestCondenseIllustrations_NoIllustrations(t *testing.T) {
 	raw := "Just ordinary prose with no illustration blocks at all."
-	got, err := condenseIllustrations(raw)
+	got, err := condenseIllustrations(raw, " ")
 	if err != nil {
 		t.Fatalf("condenseIllustrations: %v", err)
 	}
@@ -100,7 +120,7 @@ func TestCondenseIllustrations_NoIllustrations(t *testing.T) {
 
 func TestCondenseIllustrations_UnmatchedBracket(t *testing.T) {
 	raw := "[Illustration: this never closes"
-	if _, err := condenseIllustrations(raw); err == nil {
+	if _, err := condenseIllustrations(raw, " "); err == nil {
 		t.Fatal("condenseIllustrations() = nil error, want an error for an unmatched '['")
 	}
 }

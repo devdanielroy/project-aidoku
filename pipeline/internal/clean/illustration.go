@@ -58,7 +58,13 @@ func removeBareIllustrations(body string) string {
 	return strings.ReplaceAll(body, bareIllustrationTag, "")
 }
 
-func condenseIllustrations(body string) (string, error) {
+// wordJoin is inserted between two lines that were only separated by
+// Gutenberg's line-wrapping — same parameter, same reasoning, as
+// dewrapParagraphs in clean.go: " " for a space-separated language
+// (English), "" for one that isn't (Japanese doesn't put spaces between
+// words, so a caption wrapped across multiple lines must be rejoined
+// without inserting one).
+func condenseIllustrations(body string, wordJoin string) (string, error) {
 	var b strings.Builder
 	rest := body
 	for {
@@ -73,7 +79,7 @@ func condenseIllustrations(body string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("condense illustration block: %w", err)
 		}
-		b.WriteString(condenseWhitespace(block))
+		b.WriteString(condenseWhitespace(block, wordJoin))
 		rest = remainder
 	}
 	return b.String(), nil
@@ -100,9 +106,10 @@ func extractBracketedBlock(s string) (block, remainder string, err error) {
 }
 
 // condenseWhitespace collapses every run of whitespace (spaces, tabs,
-// newlines) in s down to a single space, and trims the ends.
-func condenseWhitespace(s string) string {
-	return strings.Join(strings.Fields(s), " ")
+// newlines) in s down to a single wordJoin, and trims the ends — same
+// wordJoin convention as dewrapParagraphs (clean.go).
+func condenseWhitespace(s string, wordJoin string) string {
+	return strings.Join(strings.Fields(s), wordJoin)
 }
 
 func truncate(s string, n int) string {

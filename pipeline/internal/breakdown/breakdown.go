@@ -171,7 +171,7 @@ Not every chunk needs every section. A short, grammatically simple chunk might o
 Format, matching this app's established house style:
 - Section headers in %[2]s, exactly these labels for these sections when you include them: %[3]s for sentence structure, %[4]s for vocabulary, %[5]s for grammar, %[6]s for meaning. Use a different label in the same style only for a cultural/stylistic note that doesn't fit those four.
 - Separate sections with a blank line.
-- Quote exact %[1]s spans from the chunk's text in double quotes when referring to them.
+- Quote exact %[1]s spans from the chunk's text in double quotes when referring to them, copied verbatim — never translated into %[2]s. These instructions are written in %[2]s and so is most of what you're writing, but a quoted %[1]s span is the one thing that must stay in %[1]s exactly as it appears in the chunk's text.
 - List multiple vocabulary items with a "・" bullet per item.
 - Write entirely in natural, explanatory %[2]s — no %[1]s prose outside of quoted spans copied from the passage itself.%[7]s
 

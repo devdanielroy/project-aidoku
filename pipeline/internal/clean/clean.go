@@ -35,13 +35,16 @@ var (
 // first byte of a source file.
 const utf8BOM = "\uFEFF"
 
-// Clean strips Project Gutenberg's license header and footer from raw,
-// and normalizes line endings and excess blank lines. Returns an error if
-// the standard Gutenberg START/END markers aren't found, rather than
-// silently passing through unrecognized boilerplate — or worse, actual
-// book content mistaken for boilerplate — into the rest of the pipeline;
-// an unexpected format should surface for a human to look at.
-func Clean(raw string) (string, error) {
+// clean is Clean (clean_english.go) and CleanJapanese's
+// (clean_japanese.go) shared implementation. Gutenberg's
+// license wrapper and illustration-placeholder conventions are its own
+// (English-language) transcription format, applied the same way
+// regardless of the book's own language, so none of this needs a
+// per-language variant except the final dewrap step — wordJoin is
+// what's inserted between two rejoined wrapped lines (see
+// dewrapParagraphs): " " for space-separated languages, "" for
+// Japanese.
+func clean(raw string, wordJoin string) (string, error) {
 	normalized := normalizeLineEndings(raw)
 
 	startLoc := startMarker.FindStringIndex(normalized)
@@ -59,11 +62,11 @@ func Clean(raw string) (string, error) {
 	body := normalized[startLoc[1]:endLoc[0]]
 	body = strings.TrimSpace(body)
 	body = removeBareIllustrations(body)
-	body, err := condenseIllustrations(body)
+	body, err := condenseIllustrations(body, wordJoin)
 	if err != nil {
 		return "", fmt.Errorf("clean: %w", err)
 	}
-	body = dewrapParagraphs(body)
+	body = dewrapParagraphs(body, wordJoin)
 	return body, nil
 }
 
@@ -83,9 +86,17 @@ func normalizeLineEndings(s string) string {
 //
 // This joins each paragraph's wrapped lines back into one flowing line —
 // trimming each line's leading/trailing whitespace first, so indentation
-// (e.g. centered title-page text) doesn't leave a gap mid-sentence — and
-// normalizes the separator between paragraphs to exactly one blank line.
-func dewrapParagraphs(body string) string {
+// (e.g. centered title-page text, or a Japanese paragraph's leading
+// 　indent — both are Unicode whitespace as far as strings.TrimSpace is
+// concerned) doesn't leave a gap mid-sentence — and normalizes the
+// separator between paragraphs to exactly one blank line.
+//
+// wordJoin is inserted between two rejoined lines: " " for a
+// space-separated language (English — otherwise "That is an" and
+// "uncommon" would glue into "anuncommon"), "" for one that isn't
+// (Japanese doesn't put spaces between words at all, so joining with a
+// space would incorrectly insert one mid-word).
+func dewrapParagraphs(body string, wordJoin string) string {
 	var paragraphs []string
 	for _, p := range paragraphBreakRe.Split(body, -1) {
 		var lines []string
@@ -97,7 +108,7 @@ func dewrapParagraphs(body string) string {
 		if len(lines) == 0 {
 			continue // a paragraph that was pure whitespace/artifacts
 		}
-		paragraphs = append(paragraphs, strings.Join(lines, " "))
+		paragraphs = append(paragraphs, strings.Join(lines, wordJoin))
 	}
 	return strings.Join(paragraphs, "\n\n")
 }

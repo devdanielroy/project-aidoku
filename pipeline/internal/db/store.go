@@ -2,7 +2,10 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
+
+	"github.com/jackc/pgx/v5"
 
 	"aidoku/pipeline/internal/catalog"
 	"aidoku/pipeline/internal/langpair"
@@ -85,6 +88,80 @@ func (s *Store) UpsertBook(ctx context.Context, b Book) (int, error) {
 	return id, nil
 }
 
+// GetBookIDByGutenbergID looks up an already-persisted book's id by its
+// Gutenberg ID — used to resume a previously interrupted/failed
+// cmd/process run against a book that's already partway through the
+// pipeline, without re-fetching, re-cleaning, or re-grouping it from
+// scratch. found is false, with a nil error, when no such book exists
+// yet — that's the ordinary "processing this book for the first time"
+// case, not a failure.
+func (s *Store) GetBookIDByGutenbergID(ctx context.Context, gutenbergID int) (id int, found bool, err error) {
+	const q = `SELECT id FROM book WHERE gutenberg_id = $1`
+
+	err = s.db.QueryRow(ctx, q, gutenbergID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("db: GetBookIDByGutenbergID: %w", err)
+	}
+	return id, true, nil
+}
+
+// ChunkProgress is one already-persisted chunk plus how much of the
+// pipeline has already run for it — see LoadChunkProgress.
+type ChunkProgress struct {
+	ID           int
+	Chunk        types.Chunk
+	HasQuestions bool
+	HasBreakdown bool
+}
+
+// LoadChunkProgress returns every chunk already persisted for bookID,
+// in index order, alongside whether each already has its questions and
+// breakdown saved. Used to resume a previously interrupted/failed
+// cmd/process run against chunks Stage B already grouped (a paid API
+// call, already spent) — skipping straight to whichever of
+// questions/breakdown a given chunk is still missing, rather than
+// re-running every stage and re-spending API calls on work already
+// paid for. See the pipeline-incremental-persistence design this
+// builds on.
+//
+// HasQuestions/HasBreakdown are existence checks, not counts: SaveChunk
+// writes a chunk's full question set (all three types) in one
+// transaction, so a chunk either has none or all three — there's no
+// partial state to distinguish between "has at least one" and "has all
+// three" here.
+func (s *Store) LoadChunkProgress(ctx context.Context, bookID int) ([]ChunkProgress, error) {
+	const q = `
+		SELECT
+			c.id, c.index, c.text, c.char_count,
+			EXISTS (SELECT 1 FROM question q WHERE q.chunk_id = c.id) AS has_questions,
+			EXISTS (SELECT 1 FROM breakdown b WHERE b.chunk_id = c.id) AS has_breakdown
+		FROM chunk c
+		WHERE c.book_id = $1
+		ORDER BY c.index`
+
+	rows, err := s.db.Query(ctx, q, bookID)
+	if err != nil {
+		return nil, fmt.Errorf("db: LoadChunkProgress: %w", err)
+	}
+	defer rows.Close()
+
+	var progress []ChunkProgress
+	for rows.Next() {
+		var p ChunkProgress
+		if err := rows.Scan(&p.ID, &p.Chunk.Index, &p.Chunk.Text, &p.Chunk.CharCount, &p.HasQuestions, &p.HasBreakdown); err != nil {
+			return nil, fmt.Errorf("db: LoadChunkProgress: scan: %w", err)
+		}
+		progress = append(progress, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: LoadChunkProgress: %w", err)
+	}
+	return progress, nil
+}
+
 // SaveChunk upserts chunk under bookID and replaces its questions with
 // questions, atomically (both the chunk row and all question rows
 // commit together, or neither does — a chunk with only some of its
@@ -148,10 +225,8 @@ func (s *Store) SaveChunk(ctx context.Context, bookID int, chunk types.Chunk, qu
 	return chunkID, nil
 }
 
-// SaveBreakdown upserts chunkID's breakdown content (see
-// db/schema.sql — one-to-one with chunk). Not called by anything yet:
-// breakdown generation (pipeline stage 4.3) isn't built. Included now so
-// the db package's write surface matches the schema in full.
+// SaveBreakdown upserts chunkID's breakdown content (see db/schema.sql
+// — one-to-one with chunk).
 func (s *Store) SaveBreakdown(ctx context.Context, chunkID int, content string) error {
 	const q = `
 		INSERT INTO breakdown (chunk_id, content)

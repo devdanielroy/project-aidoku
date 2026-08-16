@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"aidoku/pipeline/internal/catalog"
+	"aidoku/pipeline/internal/clean"
 )
 
 type fakeFetcher struct {
@@ -48,7 +49,7 @@ func TestPrepareBook_Success(t *testing.T) {
 	fetcher := &fakeFetcher{text: raw}
 	entry := testEntry()
 
-	got, err := PrepareBook(context.Background(), fetcher, entry)
+	got, err := PrepareBook(context.Background(), fetcher, entry, clean.Clean)
 	if err != nil {
 		t.Fatalf("PrepareBook: %v", err)
 	}
@@ -67,7 +68,7 @@ func TestPrepareBook_Success(t *testing.T) {
 
 func TestPrepareBook_FetchError(t *testing.T) {
 	fetcher := &fakeFetcher{err: errors.New("network down")}
-	_, err := PrepareBook(context.Background(), fetcher, testEntry())
+	_, err := PrepareBook(context.Background(), fetcher, testEntry(), clean.Clean)
 	if err == nil {
 		t.Fatal("PrepareBook() = nil error, want an error when fetching fails")
 	}
@@ -76,7 +77,7 @@ func TestPrepareBook_FetchError(t *testing.T) {
 func TestPrepareBook_CleanError(t *testing.T) {
 	// No Gutenberg START/END markers at all - Clean should reject it.
 	fetcher := &fakeFetcher{text: "Just some text with no Gutenberg wrapper."}
-	_, err := PrepareBook(context.Background(), fetcher, testEntry())
+	_, err := PrepareBook(context.Background(), fetcher, testEntry(), clean.Clean)
 	if err == nil {
 		t.Fatal("PrepareBook() = nil error, want an error when Clean fails")
 	}
@@ -90,8 +91,37 @@ func TestPrepareBook_TrimError(t *testing.T) {
 		"*** END OF THE PROJECT GUTENBERG EBOOK X ***"
 
 	fetcher := &fakeFetcher{text: raw}
-	_, err := PrepareBook(context.Background(), fetcher, testEntry())
+	_, err := PrepareBook(context.Background(), fetcher, testEntry(), clean.Clean)
 	if err == nil {
 		t.Fatal("PrepareBook() = nil error, want an error when Trim's anchors aren't found")
+	}
+}
+
+// TestPrepareBook_UsesTheProvidedCleanFunc confirms PrepareBook actually
+// calls whichever CleanFunc it's given rather than hardcoding clean.Clean
+// — the whole point of taking one as a parameter (see cmd/process and
+// cmd/ingest, which pick clean.Clean vs clean.CleanJapanese based on
+// their -pair flag).
+func TestPrepareBook_UsesTheProvidedCleanFunc(t *testing.T) {
+	fetcher := &fakeFetcher{text: "irrelevant, cleanFn below ignores its input"}
+	entry := testEntry()
+	entry.FirstLine = "custom clean output"
+	entry.LastLine = "custom clean output"
+
+	var gotRaw string
+	customClean := func(raw string) (string, error) {
+		gotRaw = raw
+		return "custom clean output", nil
+	}
+
+	got, err := PrepareBook(context.Background(), fetcher, entry, customClean)
+	if err != nil {
+		t.Fatalf("PrepareBook: %v", err)
+	}
+	if gotRaw != fetcher.text {
+		t.Errorf("custom CleanFunc was called with %q, want the fetched text %q", gotRaw, fetcher.text)
+	}
+	if got != "custom clean output" {
+		t.Errorf("PrepareBook() = %q, want the custom CleanFunc's output to have been used", got)
 	}
 }

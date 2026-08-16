@@ -6,7 +6,8 @@
 // throwaway smoke test on hand-typed sentences, not a real book).
 //
 // Runs, per book: pipeline.PrepareBook (fetch/clean/trim) -> Stage A
-// (segment.Segment) -> windowing (chunk.SplitIntoWindows) -> Stage B
+// (segment.Segment or segment.SegmentJapanese, dispatched on -pair) ->
+// windowing (chunk.SplitIntoWindows) -> Stage B
 // (chunk grouping, one real API call per window) -> question generation
 // and breakdown generation (one real API call each, per chunk) ->
 // persisted via internal/db. Every book is saved with Status left at its
@@ -30,6 +31,13 @@
 // per-chunk granularity here. The rest of the book still gets saved;
 // staying in "processing" status means nothing half-generated can reach
 // a real user regardless.
+//
+// Re-running against a book that already has grouped chunks in
+// Postgres resumes rather than starting over: fetch/clean/segment/
+// Stage B grouping are skipped entirely (see chunksForBook), and each
+// individual chunk only regenerates whichever of questions/breakdown it
+// doesn't already have (see the loop in processBook). Nothing already
+// paid for is ever paid for twice by re-running this command.
 //
 // Use -dry-run first: it runs every free stage (fetch through
 // windowing) for real, prints exactly how many real API calls the full
@@ -58,6 +66,7 @@ import (
 	"aidoku/pipeline/internal/breakdown"
 	"aidoku/pipeline/internal/catalog"
 	"aidoku/pipeline/internal/chunk"
+	"aidoku/pipeline/internal/clean"
 	"aidoku/pipeline/internal/db"
 	"aidoku/pipeline/internal/ingest"
 	"aidoku/pipeline/internal/langpair"
@@ -185,25 +194,8 @@ func filterByGutenbergID(entries []catalog.Entry, id int) []catalog.Entry {
 func processBook(ctx context.Context, entry catalog.Entry, pair langpair.LanguagePair, ingestClient *ingest.Client, client *anthropic.Client, store *db.Store, dryRun bool) error {
 	fmt.Printf("=== %s by %s (Gutenberg #%d) ===\n", entry.Title, entry.Author, entry.GutenbergID)
 
-	text, err := pipeline.PrepareBook(ctx, ingestClient, entry)
-	if err != nil {
-		return fmt.Errorf("prepare: %w", err)
-	}
-	sentences := segment.Segment(text)
-	windows := chunk.SplitIntoWindows(sentences, chunk.WindowTargetChars)
-
-	charCount := len([]rune(text))
-	estimatedChunks := (charCount + chunk.TargetChunkChars/2) / chunk.TargetChunkChars // rounded, rough
-	if estimatedChunks == 0 {
-		estimatedChunks = 1
-	}
-	fmt.Printf("%d chars, %d sentences, %d window(s) for chunk grouping, ~%d chunk(s) estimated\n",
-		charCount, len(sentences), len(windows), estimatedChunks)
-
 	if dryRun {
-		printCostEstimate(len(windows), estimatedChunks)
-		fmt.Println()
-		return nil
+		return printDryRunEstimate(ctx, entry, pair, ingestClient)
 	}
 
 	book := db.NewBookFromEntry(entry, pair)
@@ -212,7 +204,7 @@ func processBook(ctx context.Context, entry catalog.Entry, pair langpair.Languag
 		return fmt.Errorf("save book: %w", err)
 	}
 
-	allChunks, err := groupAllChunks(ctx, client, store, bookID, windows)
+	allChunks, err := chunksForBook(ctx, entry, pair, ingestClient, client, store, bookID)
 	if err != nil {
 		return err
 	}
@@ -221,15 +213,38 @@ func processBook(ctx context.Context, entry catalog.Entry, pair langpair.Languag
 	questionGen := question.NewGenerator(client, pair)
 	breakdownGen := breakdown.NewGenerator(client, pair)
 
-	failedChunks := 0
-	for _, c := range allChunks {
-		fmt.Printf("  chunk %d/%d: questions...", c.Index+1, len(allChunks))
-		questions, err := questionGen.GenerateQuestions(ctx, c)
-		if err != nil {
-			fmt.Println(" FAILED")
-			fmt.Fprintf(os.Stderr, "    chunk %d questions: %v\n", c.Index, err)
-			failedChunks++
+	failedChunks, skippedChunks := 0, 0
+	for i := range allChunks {
+		p := allChunks[i]
+		c := p.Chunk
+
+		if p.HasQuestions && p.HasBreakdown {
+			skippedChunks++
 			continue
+		}
+
+		fmt.Printf("  chunk %d/%d: ", c.Index+1, len(allChunks))
+
+		chunkID := p.ID
+		if p.HasQuestions {
+			// Resumed from a prior run that got this far — questions
+			// are already saved (chunkID already known), only
+			// breakdown is missing. No point re-spending a real API
+			// call regenerating questions that already exist.
+			fmt.Print("questions already saved, skipping...")
+		} else {
+			fmt.Print("questions...")
+			questions, err := questionGen.GenerateQuestions(ctx, c)
+			if err != nil {
+				fmt.Println(" FAILED")
+				fmt.Fprintf(os.Stderr, "    chunk %d questions: %v\n", c.Index, err)
+				failedChunks++
+				continue
+			}
+			chunkID, err = store.SaveChunk(ctx, bookID, c, questions)
+			if err != nil {
+				return fmt.Errorf("save chunk %d: %w", c.Index, err)
+			}
 		}
 
 		fmt.Print(" breakdown...")
@@ -241,20 +256,98 @@ func processBook(ctx context.Context, entry catalog.Entry, pair langpair.Languag
 			continue
 		}
 
-		chunkID, err := store.SaveChunk(ctx, bookID, c, questions)
-		if err != nil {
-			return fmt.Errorf("save chunk %d: %w", c.Index, err)
-		}
 		if err := store.SaveBreakdown(ctx, chunkID, content); err != nil {
 			return fmt.Errorf("save breakdown for chunk %d: %w", c.Index, err)
 		}
 		fmt.Println(" saved")
 	}
 
-	fmt.Printf("=== %q: %d/%d chunk(s) fully processed and saved ===\n\n", entry.Title, len(allChunks)-failedChunks, len(allChunks))
+	fmt.Printf("=== %q: %d/%d chunk(s) fully processed and saved", entry.Title, len(allChunks)-failedChunks, len(allChunks))
+	if skippedChunks > 0 {
+		fmt.Printf(" (%d already complete from a prior run)", skippedChunks)
+	}
+	fmt.Println(" ===")
+	fmt.Println()
 	if failedChunks > 0 {
 		return fmt.Errorf("%d of %d chunk(s) failed generation (see stderr above) — the rest were saved", failedChunks, len(allChunks))
 	}
+	return nil
+}
+
+// cleanAndSegmentFns picks Clean/Segment's Japanese-aware sibling when
+// pair's source (Target) language calls for one — see
+// internal/clean/clean_japanese.go, internal/segment/segment_japanese.go.
+func cleanAndSegmentFns(pair langpair.LanguagePair) (pipeline.CleanFunc, func(string) []types.SentenceInput) {
+	if pair.Target == "ja" {
+		return clean.CleanJapanese, segment.SegmentJapanese
+	}
+	return clean.Clean, segment.Segment
+}
+
+// chunksForBook returns bookID's chunks, resuming from Postgres instead
+// of re-grouping from scratch whenever a prior run already got this
+// book through Stage B. Stage B (chunk.Grouper) is a real, paid API
+// call per window — see groupAllChunks — so a book that already has
+// grouped chunks (from a run that got interrupted, hit a transient
+// failure, or ran out of credits partway through question/breakdown
+// generation) should never pay for that again just to pick up where it
+// left off. The free stages (fetch/clean/segment/windowing) are skipped
+// right along with it in that case: there's nothing left for them to
+// feed into.
+func chunksForBook(ctx context.Context, entry catalog.Entry, pair langpair.LanguagePair, ingestClient *ingest.Client, client *anthropic.Client, store *db.Store, bookID int) ([]db.ChunkProgress, error) {
+	existing, err := store.LoadChunkProgress(ctx, bookID)
+	if err != nil {
+		return nil, fmt.Errorf("load existing chunks: %w", err)
+	}
+	if len(existing) > 0 {
+		fmt.Printf("  resuming: %d chunk(s) already grouped in a prior run, skipping fetch/clean/segment/grouping\n", len(existing))
+		return existing, nil
+	}
+
+	cleanFn, segmentFn := cleanAndSegmentFns(pair)
+	text, err := pipeline.PrepareBook(ctx, ingestClient, entry, cleanFn)
+	if err != nil {
+		return nil, fmt.Errorf("prepare: %w", err)
+	}
+	sentences := segmentFn(text)
+	windows := chunk.SplitIntoWindows(sentences, chunk.WindowTargetChars)
+	fmt.Printf("%d chars, %d sentences, %d window(s) for chunk grouping\n", len([]rune(text)), len(sentences), len(windows))
+
+	grouped, err := groupAllChunks(ctx, client, store, bookID, windows, pair)
+	if err != nil {
+		return nil, err
+	}
+	progress := make([]db.ChunkProgress, len(grouped))
+	for i, c := range grouped {
+		progress[i] = db.ChunkProgress{Chunk: c}
+	}
+	return progress, nil
+}
+
+// printDryRunEstimate runs every free stage (fetch through windowing)
+// for real and prints the cost estimate cmd/process's own doc comment
+// promises — no Postgres involved, so it never sees (and never needs
+// to skip past) a resumed book; see chunksForBook for the real-run
+// resume path this mirrors free-stage-wise.
+func printDryRunEstimate(ctx context.Context, entry catalog.Entry, pair langpair.LanguagePair, ingestClient *ingest.Client) error {
+	cleanFn, segmentFn := cleanAndSegmentFns(pair)
+	text, err := pipeline.PrepareBook(ctx, ingestClient, entry, cleanFn)
+	if err != nil {
+		return fmt.Errorf("prepare: %w", err)
+	}
+	sentences := segmentFn(text)
+	windows := chunk.SplitIntoWindows(sentences, chunk.WindowTargetChars)
+
+	charCount := len([]rune(text))
+	estimatedChunks := (charCount + pair.TargetChunkChars/2) / pair.TargetChunkChars // rounded, rough
+	if estimatedChunks == 0 {
+		estimatedChunks = 1
+	}
+	fmt.Printf("%d chars, %d sentences, %d window(s) for chunk grouping, ~%d chunk(s) estimated\n",
+		charCount, len(sentences), len(windows), estimatedChunks)
+
+	printCostEstimate(len(windows), estimatedChunks)
+	fmt.Println()
 	return nil
 }
 
@@ -273,8 +366,8 @@ func processBook(ctx context.Context, entry catalog.Entry, pair langpair.Languag
 // memory. Questions arrive later per chunk (see processBook's loop),
 // which upserts the same row again via SaveChunk — see
 // pipeline-incremental-persistence.
-func groupAllChunks(ctx context.Context, client *anthropic.Client, store *db.Store, bookID int, windows [][]types.SentenceInput) ([]types.Chunk, error) {
-	grouper := chunk.NewGrouper(client)
+func groupAllChunks(ctx context.Context, client *anthropic.Client, store *db.Store, bookID int, windows [][]types.SentenceInput, pair langpair.LanguagePair) ([]types.Chunk, error) {
+	grouper := chunk.NewGrouper(client, pair)
 	var allChunks []types.Chunk
 	nextIndex := 0
 	for i, window := range windows {
