@@ -72,7 +72,6 @@ flowchart TD
         REVIEW["Chunk review<br/>list + redo of chunks already cleared<br/>pass/fail from ScoreStore"]
         VOCAB["Vocab / mistake review deck ❌<br/>auto-collected across all books"]
         STREAK["Streaks + daily goal ❌"]
-        TRANSLATE["Tap-to-translate ❌<br/>per-word, JMDict EN→JA, first read only"]
         DASH["Library dashboard ❌<br/>completion %, accuracy, continue reading"]
     end
 
@@ -87,7 +86,7 @@ flowchart TD
     API -.-> UI
 
     classDef notBuilt stroke-dasharray: 5 5
-    class QA,PUB,VOCAB,STREAK,DASH,TRANSLATE notBuilt
+    class QA,PUB,VOCAB,STREAK,DASH notBuilt
 ```
 
 Three separate `pipeline/cmd/*` binaries drive the pipeline side, not
@@ -204,9 +203,6 @@ go run ./book-content/cmd/server        # listens on :8080
 - [ ] Personal vocab/mistake review deck — auto-collect words/grammar points answered incorrectly (or flagged) across *all* books into a standalone review list, not just chunk-level re-reading
 - [ ] Streaks + daily goal — reading streak tracking and a daily-goal nudge (AIDOKU_DESIGN.md §5's gamification section named this as TBD; now has a concrete data trigger via `UserProgress`)
 - [ ] Library dashboard — a dedicated overview screen aggregating what's currently only shown per-card (completion %, accuracy — see Score tracking/Resume progress above), plus "continue reading" surfacing across the whole library
-- [ ] Tap-to-translate — per-word dictionary lookup (JMDict, EN→JA) on the first/unassisted reading page, to soften public-domain vocabulary difficulty without pipeline-side difficulty detection (too hard to judge accurately per level). Note: knowingly relaxes the "no dictionary during first read" principle in §2/`ReadingView` — worth reconciling there when built. For v0 English to Japanese, we can use
-https://www.edrdg.org/jmdict/j_jmdict.html combined with 
-https://github.com/aaaton/golem as a lemmatizer.
 
 ## Adding a Book to the Catalog
 
