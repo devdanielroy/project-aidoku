@@ -113,10 +113,7 @@ var EN_JP = LanguagePair{
 }
 
 // JP_EN: the reverse of EN_JP — the learner's native language is
-// English, they're studying Japanese. No catalog entries yet
-// (pipeline/catalogs/JP_EN.txt starts empty) and no worked
-// BreakdownExample for the same reason: nothing's actually been run
-// through this pair for real yet to validate one against.
+// English, they're studying Japanese.
 var JP_EN = LanguagePair{
 	Target: "ja",
 	Native: "en",
@@ -126,6 +123,36 @@ var JP_EN = LanguagePair{
 		"[Grammar]",
 		"[Meaning]",
 	},
+	// A real breakdown from processing 羅生門 (Rashomon) for real, not a
+	// fabricated one — see EN_JP's own BreakdownExample doc comment for
+	// why that matters. One stray zero-width space (U+200B) the model
+	// emitted mid-word was stripped; otherwise verbatim.
+	BreakdownExample: `[Sentence Structure]
+This chunk has three connected sentences building a cause-and-effect chain of decay.
+
+The first, "洛中がその始末であるから、羅生門の修理などは、元より誰も捨てて顧みる者がなかった," is a causal construction: the から-clause ("洛中がその始末であるから") gives the reason, and the main clause ("羅生門の修理などは...なかった") states the consequence — nobody looked after the gate's repairs.
+
+The second part uses a "taking advantage of" construction, "その荒れ果てたのをよい事にして," followed by two short, blunt declarative sentences: "狐狸（こり）が棲む。盗人が棲む。" Notice how these two clauses are given as separate sentences rather than joined with "や" or "し" — this staccato rhythm mimics a list piling up, emphasizing how thoroughly the gate has been abandoned to lawlessness.
+
+The third sentence, "とうとうしまいには、引取り手のない死人を、この門へ持って来て、捨てて行くと云う習慣さえ出来た," builds a long noun phrase ("引取り手のない死人") as the object of a chain of te-form verbs ("持って来て、捨てて行く"), all modifying "習慣" — literally "the custom of bringing here and discarding unclaimed corpses."
+
+[Vocabulary]
+・洛中 (rakuchū) – "the capital city" (i.e., Kyoto); used here to refer to the general state of the city as a whole.
+・始末 (shimatsu) – here means "such a state of affairs," typically implying a bad or regrettable outcome.
+・顧みる (kaerimiru) – to look after, to give thought/care to something.
+・荒れ果てる (arehateru) – to fall into utter ruin/disrepair; the てた form here is past/perfective, "had become utterly ruined."
+・狐狸 (kori, glossed in the text) – foxes and badgers/raccoon dogs, often used together idiomatically to mean "wild animals" or, figuratively, "sly creatures."
+・棲む (sumu) – to inhabit, live (used for animals inhabiting a place, as opposed to 住む for humans).
+・引取り手 (hikitorite) – someone who comes to claim or retrieve (a person, an item, a body).
+・習慣 (shūkan) – custom, habitual practice.
+
+[Grammar]
+・から – causal conjunction ("because"), linking the state of the capital to the neglect of the gate.
+・のをよい事にして – a fixed expression meaning "taking advantage of the fact that...," here used to show how the gate's ruin is exploited (opportunistically) by animals and criminals.
+・と云う習慣さえ出来た – "even the custom of ~ came to exist." The さえ ("even") intensifies the sense of how far things have deteriorated — it's not just decay, but a full-blown social practice of dumping corpses.
+
+[Meaning]
+This passage builds a picture of total societal and physical decay, using the neglected Rashōmon gate as a symbol for a Kyoto in decline. Because the capital itself is in a wretched state, no one bothers to maintain the gate; this neglect invites wild animals and criminals to take up residence; and finally, the abandonment becomes so complete that people begin using the gate as a dumping ground for unclaimed corpses. The escalation — from disrepair, to animals, to thieves, to corpses — mirrors the moral and social breakdown that runs throughout the story, setting up the amoral, desperate world the protagonist inhabits. The terse, list-like phrasing ("狐狸が棲む。盗人が棲む。") reinforces the matter-of-fact tone with which such horrors are now treated as ordinary.`,
 	// ValidateNativeText checks for the *absence* of Japanese script,
 	// not the presence of English — there's no cheap, reliable way to
 	// positively confirm "this is English" by inspecting text alone
@@ -134,14 +161,8 @@ var JP_EN = LanguagePair{
 	// model didn't just ignore instructions and answer in Japanese
 	// (the Target language) anyway still catches the real failure mode.
 	ValidateNativeText: validateNotJapanese,
-	// 140±35: a first guess, same "picked by feel, see where it gets
-	// us" basis as EN_JP's 240±60 — Japanese has no spaces and denser
-	// kanji compounds, so a lower character count is a reasonable
-	// starting point for a comparable amount of reading content, not a
-	// principled conversion. Revisit once there's real JP_EN chunked
-	// output to judge against (see AIDOKU_DESIGN.md §3a).
-	TargetChunkChars:   140,
-	ChunkCharTolerance: 35,
+	TargetChunkChars:   120,
+	ChunkCharTolerance: 30,
 }
 
 // displayNames maps the ISO 639-1 codes LanguagePair.Target/Native use

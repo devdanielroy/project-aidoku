@@ -325,12 +325,14 @@ func TestGroupSentencesIntoChunks_FailsIfLanguagePairUnset(t *testing.T) {
 
 func TestBuildSystemPrompt_ReflectsThePairPassedIn(t *testing.T) {
 	enJP := buildSystemPrompt(langpair.EN_JP)
-	if !strings.Contains(enJP, "targeting approximately 240 characters per chunk") {
+	wantEnJP := fmt.Sprintf("targeting approximately %d characters per chunk", langpair.EN_JP.TargetChunkChars)
+	if !strings.Contains(enJP, wantEnJP) {
 		t.Errorf("EN_JP prompt doesn't mention its target chunk length: %s", enJP)
 	}
 
 	jpEN := buildSystemPrompt(langpair.JP_EN)
-	if !strings.Contains(jpEN, "targeting approximately 140 characters per chunk") {
+	wantJpEN := fmt.Sprintf("targeting approximately %d characters per chunk", langpair.JP_EN.TargetChunkChars)
+	if !strings.Contains(jpEN, wantJpEN) {
 		t.Errorf("JP_EN prompt doesn't mention its target chunk length: %s", jpEN)
 	}
 	if enJP == jpEN {
