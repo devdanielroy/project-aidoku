@@ -186,7 +186,7 @@ For "comprehension":
 - "explanation" is 1-3 %[2]s sentences confirming what happened.
 
 Rules that apply to all three:
-- "options" is always exactly %[3]d entries, in %[2]s, all distinct and all plausible — no throwaway wrong answers. Always list the correct option first, as options[0] ("answer_index": 0) — the client app randomizes the displayed order before showing it to the reader, so you don't need to vary or think about position.
+- "options" is always exactly %[3]d entries, in %[2]s, all distinct and all plausible — no throwaway wrong answers, and no giveaway tells either: keep every option roughly the same length and level of detail as the correct one, not conspicuously shorter or blander, so length alone is never a shortcut to the answer. Always list the correct option first, as options[0] ("answer_index": 0).
 - Do not restate large portions of the passage inside any prompt — the passage itself is always visible to the reader alongside the question.
 - "highlight" (vocab/grammar) is always in %[1]s, copied verbatim from the chunk's own text, never translated into %[2]s — these instructions being written in %[2]s doesn't mean the %[1]s text you're quoting from should be.
 

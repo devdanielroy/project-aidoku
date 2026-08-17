@@ -299,6 +299,9 @@ func TestBuildSystemPrompt_ReflectsThePairPassedIn(t *testing.T) {
 		if !strings.Contains(p, "never translated") {
 			t.Errorf("prompt doesn't warn the model against translating highlight: %s", p)
 		}
+		if !strings.Contains(p, "roughly the same length") {
+			t.Errorf("prompt doesn't warn against length being a giveaway tell: %s", p)
+		}
 	}
 }
 
