@@ -39,3 +39,10 @@ https://www.gutenberg.org/cache/epub/6087/pg6087.txt
 IT happened that in the midst of the dissipations attendant upon a London winter, there appeared at the various parties of the leaders of the ton a nobleman, more remarkable for his singularities, than his rank.
 The guardians hastened to protect Miss Aubrey; but when they arrived, it was too late. Lord Ruthven had disappeared, and Aubrey's sister had glutted the thirst of a VAMPYRE! 
 Level=10
+
+Andersen's Fairy Tales
+H. C. Andersen
+https://www.gutenberg.org/cache/epub/1597/pg1597.txt
+THE EMPEROR'S NEW CLOTHES
+Her soul flew on the sunshine to God, and there no one asked after the RED SHOES.
+Level=7

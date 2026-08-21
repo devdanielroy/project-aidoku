@@ -1,3 +1,11 @@
+/// How the app picks light vs. dark — mirrors Flutter's own ThemeMode
+/// (system/light/dark) as a model-layer enum instead of using that type
+/// directly, so this file (and SettingsStore) doesn't need a Flutter
+/// framework import just to describe a stored setting. AidokuApp (see
+/// main.dart) maps this to the real ThemeMode at the one place that
+/// actually needs it.
+enum ThemeModeSetting { system, light, dark }
+
 /// A reader's top-level, device-local settings: which language they're
 /// studying and what language they study it in, plus a display name.
 /// Analogous to Duolingo's course picker — nativeLanguage/
@@ -26,11 +34,15 @@ class UserSettings {
   /// (including whenever studyLanguages is empty).
   final String? activeStudyLanguage;
 
+  /// Defaults to following the OS, same as most apps' own default.
+  final ThemeModeSetting themeMode;
+
   const UserSettings({
     this.username = '',
     this.nativeLanguage,
     this.studyLanguages = const [],
     this.activeStudyLanguage,
+    this.themeMode = ThemeModeSetting.system,
   });
 
   UserSettings copyWith({
@@ -38,12 +50,14 @@ class UserSettings {
     String? nativeLanguage,
     List<String>? studyLanguages,
     String? activeStudyLanguage,
+    ThemeModeSetting? themeMode,
   }) {
     return UserSettings(
       username: username ?? this.username,
       nativeLanguage: nativeLanguage ?? this.nativeLanguage,
       studyLanguages: studyLanguages ?? this.studyLanguages,
       activeStudyLanguage: activeStudyLanguage ?? this.activeStudyLanguage,
+      themeMode: themeMode ?? this.themeMode,
     );
   }
 }

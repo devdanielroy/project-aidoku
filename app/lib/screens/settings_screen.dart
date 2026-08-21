@@ -28,7 +28,22 @@ class SettingsScreen extends StatefulWidget {
   /// See SettingsStore's own doc comment for why this is an interface.
   final SettingsStore? settingsStore;
 
-  const SettingsScreen({super.key, this.repository, this.settingsStore});
+  /// Called with the saved settings' theme mode on every successful
+  /// save (whether or not it actually changed — a redundant call is
+  /// harmless). AidokuApp (main.dart) is the one thing that needs to
+  /// react live: it owns MaterialApp's themeMode, several navigation
+  /// levels above this screen, so there's no ancestor state it can just
+  /// setState() on directly — this callback is threaded down through
+  /// LibraryScreen instead. Optional because tests that don't care
+  /// about live theme switching shouldn't have to supply a no-op.
+  final ValueChanged<ThemeModeSetting>? onThemeModeChanged;
+
+  const SettingsScreen({
+    super.key,
+    this.repository,
+    this.settingsStore,
+    this.onThemeModeChanged,
+  });
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -56,6 +71,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _save(UserSettings settings) async {
     await _settingsStore.saveSettings(settings);
+    widget.onThemeModeChanged?.call(settings.themeMode);
     if (!mounted) return;
     Navigator.of(context).pop();
   }
@@ -109,6 +125,7 @@ class _SettingsFormState extends State<_SettingsForm> {
   late String? _nativeLanguage = widget.initial.nativeLanguage;
   late Set<String> _studyLanguages = widget.initial.studyLanguages.toSet();
   late String? _activeStudyLanguage = widget.initial.activeStudyLanguage;
+  late ThemeModeSetting _themeMode = widget.initial.themeMode;
   bool _saving = false;
 
   @override
@@ -161,6 +178,7 @@ class _SettingsFormState extends State<_SettingsForm> {
         nativeLanguage: _nativeLanguage,
         studyLanguages: _studyLanguages.toList(),
         activeStudyLanguage: _activeStudyLanguage,
+        themeMode: _themeMode,
       ),
     );
     // Not resetting _saving on success — widget.onSave pops this screen
@@ -183,6 +201,31 @@ class _SettingsFormState extends State<_SettingsForm> {
             hintText: 'What should we call you?',
             border: OutlineInputBorder(),
           ),
+        ),
+        const SizedBox(height: 24),
+        Text('Theme', style: theme.textTheme.titleSmall),
+        const SizedBox(height: 8),
+        SegmentedButton<ThemeModeSetting>(
+          segments: const [
+            ButtonSegment(
+              value: ThemeModeSetting.system,
+              label: Text('System'),
+              icon: Icon(Icons.brightness_auto),
+            ),
+            ButtonSegment(
+              value: ThemeModeSetting.light,
+              label: Text('Light'),
+              icon: Icon(Icons.light_mode),
+            ),
+            ButtonSegment(
+              value: ThemeModeSetting.dark,
+              label: Text('Dark'),
+              icon: Icon(Icons.dark_mode),
+            ),
+          ],
+          selected: {_themeMode},
+          onSelectionChanged: (selected) =>
+              setState(() => _themeMode = selected.single),
         ),
         const SizedBox(height: 24),
         Text('Native language', style: theme.textTheme.titleSmall),

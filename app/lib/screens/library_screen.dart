@@ -38,12 +38,18 @@ class LibraryScreen extends StatefulWidget {
   /// doc comment for why this is an interface.
   final SettingsStore? settingsStore;
 
+  /// Forwarded straight through to SettingsScreen — see its own doc
+  /// comment on why AidokuApp needs this rather than just reloading
+  /// settings the way the language-filter refresh below does.
+  final ValueChanged<ThemeModeSetting>? onThemeModeChanged;
+
   const LibraryScreen({
     super.key,
     this.repository,
     this.progressStore,
     this.scoreStore,
     this.settingsStore,
+    this.onThemeModeChanged,
   });
 
   @override
@@ -85,6 +91,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         builder: (_) => SettingsScreen(
           repository: _repository,
           settingsStore: _settingsStore,
+          onThemeModeChanged: widget.onThemeModeChanged,
         ),
       ),
     );
@@ -98,7 +105,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Aidoku"),
+        title: const Text("HonTawny"),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),

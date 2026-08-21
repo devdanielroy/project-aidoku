@@ -22,7 +22,33 @@ void main() {
     expect(settings.nativeLanguage, isNull);
     expect(settings.studyLanguages, isEmpty);
     expect(settings.activeStudyLanguage, isNull);
+    expect(settings.themeMode, ThemeModeSetting.system);
   });
+
+  test('themeMode round-trips for both light and dark', () async {
+    final store = LocalSettingsStore();
+
+    await store.saveSettings(
+      const UserSettings(themeMode: ThemeModeSetting.dark),
+    );
+    expect((await store.getSettings()).themeMode, ThemeModeSetting.dark);
+
+    await store.saveSettings(
+      const UserSettings(themeMode: ThemeModeSetting.light),
+    );
+    expect((await store.getSettings()).themeMode, ThemeModeSetting.light);
+  });
+
+  test(
+    'a stale/unrecognized stored theme_mode value falls back to system',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        'settings.theme_mode': 'sepia', // not a real ThemeModeSetting
+      });
+      final store = LocalSettingsStore();
+      expect((await store.getSettings()).themeMode, ThemeModeSetting.system);
+    },
+  );
 
   test('saveSettings then getSettings round-trips every field', () async {
     final store = LocalSettingsStore();

@@ -176,6 +176,91 @@ void main() {
     expect(find.text('Active'), findsOneWidget);
   });
 
+  testWidgets('defaults to the System theme segment selected', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsScreen(
+          repository: twoPairRepository(),
+          settingsStore: FakeSettingsStore(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final segmented = tester.widget<SegmentedButton<ThemeModeSetting>>(
+      find.byType(SegmentedButton<ThemeModeSetting>),
+    );
+    expect(segmented.selected, {ThemeModeSetting.system});
+  });
+
+  testWidgets('pre-fills the theme segment from existing settings', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsScreen(
+          repository: twoPairRepository(),
+          settingsStore: FakeSettingsStore(
+            seed: const UserSettings(themeMode: ThemeModeSetting.dark),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final segmented = tester.widget<SegmentedButton<ThemeModeSetting>>(
+      find.byType(SegmentedButton<ThemeModeSetting>),
+    );
+    expect(segmented.selected, {ThemeModeSetting.dark});
+  });
+
+  testWidgets('picking a theme segment and saving persists it', (
+    WidgetTester tester,
+  ) async {
+    final store = FakeSettingsStore();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsScreen(
+          repository: twoPairRepository(),
+          settingsStore: store,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Dark'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect((await store.getSettings()).themeMode, ThemeModeSetting.dark);
+  });
+
+  testWidgets('save calls onThemeModeChanged with the saved mode', (
+    WidgetTester tester,
+  ) async {
+    ThemeModeSetting? notified;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsScreen(
+          repository: twoPairRepository(),
+          settingsStore: FakeSettingsStore(),
+          onThemeModeChanged: (mode) => notified = mode,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Light'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect(notified, ThemeModeSetting.light);
+  });
+
   testWidgets(
     'changing native language clears previously enrolled study languages',
     (WidgetTester tester) async {

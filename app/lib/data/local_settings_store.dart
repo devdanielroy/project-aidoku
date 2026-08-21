@@ -17,6 +17,7 @@ class LocalSettingsStore implements SettingsStore {
   static const _keyNativeLanguage = 'settings.native_language';
   static const _keyStudyLanguages = 'settings.study_languages';
   static const _keyActiveStudyLanguage = 'settings.active_study_language';
+  static const _keyThemeMode = 'settings.theme_mode';
 
   @override
   Future<UserSettings> getSettings() async {
@@ -26,6 +27,7 @@ class LocalSettingsStore implements SettingsStore {
       nativeLanguage: prefs.getString(_keyNativeLanguage),
       studyLanguages: prefs.getStringList(_keyStudyLanguages) ?? const [],
       activeStudyLanguage: prefs.getString(_keyActiveStudyLanguage),
+      themeMode: _parseThemeMode(prefs.getString(_keyThemeMode)),
     );
   }
 
@@ -40,6 +42,18 @@ class LocalSettingsStore implements SettingsStore {
       _keyActiveStudyLanguage,
       settings.activeStudyLanguage,
     );
+    await prefs.setString(_keyThemeMode, settings.themeMode.name);
+  }
+
+  // Falls back to system (UserSettings' own default) for anything
+  // unrecognized — unset (first run), or a stale/foreign value from a
+  // future version's enum this build doesn't know about — rather than
+  // throwing on a stored string that no longer matches an enum name.
+  static ThemeModeSetting _parseThemeMode(String? raw) {
+    for (final mode in ThemeModeSetting.values) {
+      if (mode.name == raw) return mode;
+    }
+    return ThemeModeSetting.system;
   }
 
   Future<void> _setOrRemove(
