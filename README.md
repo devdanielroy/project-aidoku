@@ -203,6 +203,10 @@ go run ./book-content/cmd/server        # listens on :8080
 - [ ] Personal vocab/mistake review deck — auto-collect words/grammar points answered incorrectly (or flagged) across *all* books into a standalone review list, not just chunk-level re-reading
 - [ ] Streaks + daily goal — reading streak tracking and a daily-goal nudge (AIDOKU_DESIGN.md §5's gamification section named this as TBD; now has a concrete data trigger via `UserProgress`)
 - [ ] Library dashboard — a dedicated overview screen aggregating what's currently only shown per-card (completion %, accuracy — see Score tracking/Resume progress above), plus "continue reading" surfacing across the whole library
+- [ ] Shop / per-book purchases — the app is free; books are bought individually via a Shop screen, filtered to the reader's study language, organized by reading level, with genre tags. A free teaser (first ~5 chunks) is available before buying. Payment via StoreKit (iOS) / Google Play Billing (Android).
+- [ ] `user-data` service — a fourth Go module (parallel to `pipeline`/`book-content`/`shared`) covering user accounts, purchase entitlements, account-backed progress/score/settings sync, and content complaints — separate from the read-only `book-content`.
+- [ ] User accounts — email sign-up, plus Google Sign-In (Android) and Sign in with Apple (iOS).
+- [ ] Content complaint/report button — a small button on the chunk reading screen to flag a bad translation, a mistake in the source text, or an error in a question or the breakdown.
 
 ## Adding a Book to the Catalog
 
