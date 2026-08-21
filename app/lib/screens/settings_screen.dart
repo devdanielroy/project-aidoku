@@ -5,6 +5,7 @@ import '../data/local_settings_store.dart';
 import '../data/settings_store.dart';
 import '../models/book.dart';
 import '../models/language_pair.dart';
+import '../models/reading_level.dart';
 import '../models/user_settings.dart';
 
 /// Lets the reader configure their top-level settings: display name,
@@ -126,6 +127,7 @@ class _SettingsFormState extends State<_SettingsForm> {
   late Set<String> _studyLanguages = widget.initial.studyLanguages.toSet();
   late String? _activeStudyLanguage = widget.initial.activeStudyLanguage;
   late ThemeModeSetting _themeMode = widget.initial.themeMode;
+  late int? _readingLevel = widget.initial.readingLevel;
   bool _saving = false;
 
   @override
@@ -179,6 +181,7 @@ class _SettingsFormState extends State<_SettingsForm> {
         studyLanguages: _studyLanguages.toList(),
         activeStudyLanguage: _activeStudyLanguage,
         themeMode: _themeMode,
+        readingLevel: _readingLevel,
       ),
     );
     // Not resetting _saving on success — widget.onSave pops this screen
@@ -190,6 +193,32 @@ class _SettingsFormState extends State<_SettingsForm> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // Save is pinned outside the scrollable, not the last item in it —
+    // the form has grown past one screen's worth of content (display
+    // name, theme, native language, study languages, reading level),
+    // and a button buried at the bottom of a long scroll is both poor
+    // UX and untestable: ListView's underlying sliver only inflates
+    // children within the viewport + cache extent into the element
+    // tree at all, so a widget-testing tap this far down can't even
+    // find "Save" to scroll to it, let alone tap it.
+    return Column(
+      children: [
+        Expanded(child: _buildScrollableFields(theme)),
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: FilledButton(
+              onPressed: _saving ? null : _save,
+              child: const Text('Save'),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildScrollableFields(ThemeData theme) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -267,10 +296,34 @@ class _SettingsFormState extends State<_SettingsForm> {
             onToggleEnrolled: (value) => _toggleStudyLanguage(code, value),
             onSetActive: () => setState(() => _activeStudyLanguage = code),
           ),
-        const SizedBox(height: 32),
-        FilledButton(
-          onPressed: _saving ? null : _save,
-          child: const Text('Save'),
+        const SizedBox(height: 24),
+        Text('Your reading level', style: theme.textTheme.titleSmall),
+        const SizedBox(height: 4),
+        Text(
+          "Just for our own records — doesn't change what you see.",
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<int?>(
+          initialValue: _readingLevel,
+          decoration: const InputDecoration(border: OutlineInputBorder()),
+          items: [
+            // A real, selectable item — not just a hint — so a reader
+            // can return to "unset" after picking a level, not just on
+            // the way to picking one the first time.
+            const DropdownMenuItem(
+              value: null,
+              child: Text('Prefer not to say'),
+            ),
+            for (final level in readingLevelNames.keys)
+              DropdownMenuItem(
+                value: level,
+                child: Text('${readingLevelNames[level]} ($level)'),
+              ),
+          ],
+          onChanged: (level) => setState(() => _readingLevel = level),
         ),
       ],
     );

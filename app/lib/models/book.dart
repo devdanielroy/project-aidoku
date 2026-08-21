@@ -1,3 +1,5 @@
+import 'reading_level.dart';
+
 /// A book available to read. Mirrors book-content's book response
 /// exactly (GET /aidoku/books, /aidoku/book/{book_id}) — see
 /// book-content/internal/db's Book struct. Deliberately doesn't carry
@@ -57,18 +59,5 @@ class Book {
   /// The human-facing name for [level] — README's Reading Levels table
   /// (Initiate..Scholar), kept in sync by hand since it's just a display
   /// label, not something book-content's API sends over the wire.
-  String get readingLevelName => _readingLevelNames[level] ?? 'Level $level';
+  String get readingLevelName => readingLevelNames[level] ?? 'Level $level';
 }
-
-const _readingLevelNames = {
-  1: 'Initiate',
-  2: 'Novice',
-  3: 'Apprentice',
-  4: 'Reader',
-  5: 'Bookworm',
-  6: 'Erudite',
-  7: 'Virtuoso',
-  8: 'Luminary',
-  9: 'Academic',
-  10: 'Scholar',
-};

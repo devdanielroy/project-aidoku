@@ -111,7 +111,6 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byType(Checkbox));
     await tester.pumpAndSettle();
-
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
 
@@ -147,7 +146,6 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     expect(find.byType(SettingsScreen), findsOneWidget);
-
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
 
@@ -259,6 +257,107 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(notified, ThemeModeSetting.light);
+  });
+
+  testWidgets('reading level defaults to unset', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsScreen(
+          repository: twoPairRepository(),
+          settingsStore: FakeSettingsStore(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final dropdown = tester.widget<DropdownButtonFormField<int?>>(
+      find.byType(DropdownButtonFormField<int?>),
+    );
+    expect(dropdown.initialValue, isNull);
+  });
+
+  testWidgets('pre-fills the reading level from existing settings', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsScreen(
+          repository: twoPairRepository(),
+          settingsStore: FakeSettingsStore(
+            seed: const UserSettings(readingLevel: 5),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final dropdown = tester.widget<DropdownButtonFormField<int?>>(
+      find.byType(DropdownButtonFormField<int?>),
+    );
+    expect(dropdown.initialValue, 5);
+  });
+
+  testWidgets('picking a reading level and saving persists it', (
+    WidgetTester tester,
+  ) async {
+    final store = FakeSettingsStore();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsScreen(
+          repository: twoPairRepository(),
+          settingsStore: store,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // ensureVisible can leave a widget this close to the reading-level
+    // dropdown's own height (56px) right at the clipped viewport edge,
+    // still not hit-testable — a full drag to the scrollable's actual
+    // end is unambiguous.
+    await tester.drag(find.byType(ListView), const Offset(0, -1000));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<int?>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Bookworm (5)').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect((await store.getSettings()).readingLevel, 5);
+  });
+
+  testWidgets('reading level can be set back to unset after being picked', (
+    WidgetTester tester,
+  ) async {
+    final store = FakeSettingsStore();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsScreen(
+          repository: twoPairRepository(),
+          settingsStore: store,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(ListView), const Offset(0, -1000));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<int?>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Bookworm (5)').last);
+    await tester.pumpAndSettle();
+
+    // "Prefer not to say" is a real item, not just a hint — it should
+    // still be choosable after a real level was already picked.
+    await tester.tap(find.byType(DropdownButtonFormField<int?>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Prefer not to say').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect((await store.getSettings()).readingLevel, isNull);
   });
 
   testWidgets(

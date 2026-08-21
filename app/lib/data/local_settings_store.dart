@@ -18,6 +18,7 @@ class LocalSettingsStore implements SettingsStore {
   static const _keyStudyLanguages = 'settings.study_languages';
   static const _keyActiveStudyLanguage = 'settings.active_study_language';
   static const _keyThemeMode = 'settings.theme_mode';
+  static const _keyReadingLevel = 'settings.reading_level';
 
   @override
   Future<UserSettings> getSettings() async {
@@ -28,6 +29,7 @@ class LocalSettingsStore implements SettingsStore {
       studyLanguages: prefs.getStringList(_keyStudyLanguages) ?? const [],
       activeStudyLanguage: prefs.getString(_keyActiveStudyLanguage),
       themeMode: _parseThemeMode(prefs.getString(_keyThemeMode)),
+      readingLevel: prefs.getInt(_keyReadingLevel),
     );
   }
 
@@ -43,6 +45,11 @@ class LocalSettingsStore implements SettingsStore {
       settings.activeStudyLanguage,
     );
     await prefs.setString(_keyThemeMode, settings.themeMode.name);
+    if (settings.readingLevel == null) {
+      await prefs.remove(_keyReadingLevel);
+    } else {
+      await prefs.setInt(_keyReadingLevel, settings.readingLevel!);
+    }
   }
 
   // Falls back to system (UserSettings' own default) for anything

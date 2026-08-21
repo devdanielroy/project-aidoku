@@ -37,12 +37,20 @@ class UserSettings {
   /// Defaults to following the OS, same as most apps' own default.
   final ThemeModeSetting themeMode;
 
+  /// The reader's own self-reported reading level (1-10, see
+  /// models/reading_level.dart), or null if they haven't picked one.
+  /// Purely informational — collected so we can see what level our
+  /// readers actually are, not read by anything else in the app (no
+  /// book filtering, no difficulty adjustment).
+  final int? readingLevel;
+
   const UserSettings({
     this.username = '',
     this.nativeLanguage,
     this.studyLanguages = const [],
     this.activeStudyLanguage,
     this.themeMode = ThemeModeSetting.system,
+    this.readingLevel,
   });
 
   UserSettings copyWith({
@@ -51,6 +59,7 @@ class UserSettings {
     List<String>? studyLanguages,
     String? activeStudyLanguage,
     ThemeModeSetting? themeMode,
+    int? readingLevel,
   }) {
     return UserSettings(
       username: username ?? this.username,
@@ -58,6 +67,7 @@ class UserSettings {
       studyLanguages: studyLanguages ?? this.studyLanguages,
       activeStudyLanguage: activeStudyLanguage ?? this.activeStudyLanguage,
       themeMode: themeMode ?? this.themeMode,
+      readingLevel: readingLevel ?? this.readingLevel,
     );
   }
 }

@@ -23,6 +23,20 @@ void main() {
     expect(settings.studyLanguages, isEmpty);
     expect(settings.activeStudyLanguage, isNull);
     expect(settings.themeMode, ThemeModeSetting.system);
+    expect(settings.readingLevel, isNull);
+  });
+
+  test('readingLevel round-trips', () async {
+    final store = LocalSettingsStore();
+    await store.saveSettings(const UserSettings(readingLevel: 7));
+    expect((await store.getSettings()).readingLevel, 7);
+  });
+
+  test('readingLevel can be cleared back to null', () async {
+    final store = LocalSettingsStore();
+    await store.saveSettings(const UserSettings(readingLevel: 7));
+    await store.saveSettings(const UserSettings());
+    expect((await store.getSettings()).readingLevel, isNull);
   });
 
   test('themeMode round-trips for both light and dark', () async {
