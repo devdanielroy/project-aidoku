@@ -27,17 +27,31 @@
 -- Every downstream table (chunk, question, breakdown, user_progress)
 -- scopes to a pair transitively via book_id — nothing needs its own
 -- copy of this.
+-- book_image/book_image_content_type: the book's cover, downloaded once
+-- from the catalog entry's image URL at processing time (see
+-- pipeline/internal/catalog.Entry.ImageURL) and stored here rather than
+-- hotlinked — served back out by book-content's own dedicated
+-- GET /aidoku/book/{id}/image route, not embedded in the book JSON
+-- (base64-inlining an image into every book-list response would bloat
+-- it for every reader just to maybe show a thumbnail). Both nullable: a
+-- failed download is logged and skipped at processing time, not fatal
+-- to the rest of the book, so not every book has a cover yet.
+-- content_type is sniffed from the downloaded bytes (Go's
+-- http.DetectContentType), not trusted blindly from the URL or the
+-- source server's response header.
 CREATE TABLE book (
-    id              SERIAL PRIMARY KEY,
-    gutenberg_id    INTEGER NOT NULL UNIQUE,
-    title           TEXT NOT NULL,
-    author          TEXT NOT NULL,
-    source_url      TEXT NOT NULL,
-    level           SMALLINT NOT NULL CHECK (level BETWEEN 1 AND 10),
-    target_language TEXT NOT NULL,
-    native_language TEXT NOT NULL,
-    status          TEXT NOT NULL DEFAULT 'processing' CHECK (status IN ('processing', 'published')),
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                       SERIAL PRIMARY KEY,
+    gutenberg_id             INTEGER NOT NULL UNIQUE,
+    title                    TEXT NOT NULL,
+    author                   TEXT NOT NULL,
+    source_url               TEXT NOT NULL,
+    level                    SMALLINT NOT NULL CHECK (level BETWEEN 1 AND 10),
+    target_language          TEXT NOT NULL,
+    native_language          TEXT NOT NULL,
+    status                   TEXT NOT NULL DEFAULT 'processing' CHECK (status IN ('processing', 'published')),
+    book_image               BYTEA,
+    book_image_content_type  TEXT,
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- Chunk: one reading chunk within a book, in reading order. "index" is

@@ -16,7 +16,9 @@ import 'settings_screen.dart';
 /// Step 1 of the core loop (AIDOKU_DESIGN.md §2): pick a book, filtered
 /// to the reader's active study language (see UserSettings/
 /// SettingsScreen) — a Duolingo-style top-level language choice, not a
-/// per-book picker.
+/// per-book picker. One of HomeScreen's two bottom-nav tabs ("My
+/// Library") — reaching the other (Store/ShopScreen) is HomeScreen's
+/// job, not this screen's own app bar anymore.
 class LibraryScreen extends StatefulWidget {
   /// Overridable for tests (a BookContentRepository wired to a fake HTTP
   /// transport — see test/fixtures/) — defaults to the real thing,
@@ -105,7 +107,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("HonTawny"),
+        title: const Text('My Library'),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),

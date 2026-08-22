@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -45,6 +46,34 @@ class BookContentRepository {
 
   Future<Book> getBook(int bookId) async {
     return Book.fromJson(await _getJson('/aidoku/book/$bookId'));
+  }
+
+  /// bookId's cover image, fetched as raw bytes over this repository's
+  /// own client — same DI/testability as every other method here,
+  /// unlike handing a URL straight to Image.network (which would fetch
+  /// over its own connection, outside the fake client widget tests
+  /// inject). Returns null when the book has no cover: not every book
+  /// does (see db/schema.sql's book_image, nullable — a failed download
+  /// at processing time is skipped, not fatal), and book-content's
+  /// dedicated GET /aidoku/book/{id}/image route 404s for those, which
+  /// is expected here, not an error worth throwing.
+  Future<Uint8List?> getBookImage(int bookId) async {
+    final uri = Uri.parse('$_baseUrl/aidoku/book/$bookId/image');
+    final http.Response response;
+    try {
+      response = await _client.get(uri);
+    } catch (e) {
+      throw BookContentException('Couldn\'t reach the book service: $e');
+    }
+    if (response.statusCode == 404) {
+      return null;
+    }
+    if (response.statusCode != 200) {
+      throw BookContentException(
+        '/aidoku/book/$bookId/image returned ${response.statusCode}',
+      );
+    }
+    return response.bodyBytes;
   }
 
   /// Ordered by reading position — bare ids, not full chunk objects; see

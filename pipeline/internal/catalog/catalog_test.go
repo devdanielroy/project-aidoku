@@ -9,6 +9,7 @@ func TestParse_SingleEntry(t *testing.T) {
 	src := "Pride and Prejudice\n" +
 		"Jane Austen\n" +
 		"https://www.gutenberg.org/cache/epub/1342/pg1342.txt\n" +
+		"https://example.com/covers/1342.jpg\n" +
 		"It is a truth universally acknowledged.\n" +
 		"The end of the book.\n" +
 		"Level=10\n"
@@ -25,6 +26,7 @@ func TestParse_SingleEntry(t *testing.T) {
 		Author:      "Jane Austen",
 		GutenbergID: 1342,
 		SourceURL:   "https://www.gutenberg.org/cache/epub/1342/pg1342.txt",
+		ImageURL:    "https://example.com/covers/1342.jpg",
 		FirstLine:   "It is a truth universally acknowledged.",
 		LastLine:    "The end of the book.",
 		Level:       LevelScholar,
@@ -41,6 +43,7 @@ func TestParse_MultipleEntriesAndComments(t *testing.T) {
 		"Book One\n" +
 		"Author One\n" +
 		"https://www.gutenberg.org/cache/epub/1/pg1.txt\n" +
+		"https://example.com/covers/1.jpg\n" +
 		"First line of book one.\n" +
 		"Last line of book one.\n" +
 		"Level=1\n" +
@@ -48,6 +51,7 @@ func TestParse_MultipleEntriesAndComments(t *testing.T) {
 		"Book Two\n" +
 		"Author Two\n" +
 		"https://www.gutenberg.org/files/2/2-0.txt\n" +
+		"https://example.com/covers/2.jpg\n" +
 		"First line of book two.\n" +
 		"Last line of book two.\n" +
 		"Level=10\n"
@@ -64,6 +68,9 @@ func TestParse_MultipleEntriesAndComments(t *testing.T) {
 	}
 	if entries[0].GutenbergID != 1 || entries[1].GutenbergID != 2 {
 		t.Errorf("GutenbergIDs = %d, %d, want 1, 2", entries[0].GutenbergID, entries[1].GutenbergID)
+	}
+	if entries[0].ImageURL != "https://example.com/covers/1.jpg" || entries[1].ImageURL != "https://example.com/covers/2.jpg" {
+		t.Errorf("ImageURLs = %q, %q, unexpected", entries[0].ImageURL, entries[1].ImageURL)
 	}
 	if entries[0].Level != LevelInitiate || entries[1].Level != LevelScholar {
 		t.Errorf("Levels = %v, %v, want %v, %v", entries[0].Level, entries[1].Level, LevelInitiate, LevelScholar)
@@ -83,7 +90,7 @@ func TestParse_URLShapes(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.url, func(t *testing.T) {
-			src := "Title\nAuthor\n" + tc.url + "\nfirst\nlast\nLevel=5\n"
+			src := "Title\nAuthor\n" + tc.url + "\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=5\n"
 			entries, err := Parse(strings.NewReader(src))
 			if err != nil {
 				t.Fatalf("Parse: %v", err)
@@ -105,40 +112,44 @@ func TestParse_Errors(t *testing.T) {
 			src:  "Title\nAuthor\n",
 		},
 		{
-			name: "entry with only 5 lines (missing Level=)",
-			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nfirst\nlast\n",
+			name: "entry with only 6 lines (missing Level=)",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\n",
 		},
 		{
-			name: "entry with 7 lines",
-			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nfirst\nlast\nLevel=1\nextra\n",
+			name: "entry with 8 lines",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=1\nextra\n",
 		},
 		{
 			name: "third line is not a URL",
-			src:  "Title\nAuthor\nnot a url\nfirst\nlast\nLevel=1\n",
+			src:  "Title\nAuthor\nnot a url\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=1\n",
+		},
+		{
+			name: "fourth line (image URL) is not a URL",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nnot a url\nfirst\nlast\nLevel=1\n",
 		},
 		{
 			name: "URL with no recognizable Gutenberg ID",
-			src:  "Title\nAuthor\nhttps://www.gutenberg.org/some/other/path\nfirst\nlast\nLevel=1\n",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/some/other/path\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=1\n",
 		},
 		{
 			name: "level line missing the Level= prefix",
-			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nfirst\nlast\n10\n",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\n10\n",
 		},
 		{
 			name: "level is not a number",
-			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nfirst\nlast\nLevel=ten\n",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=ten\n",
 		},
 		{
 			name: "level is zero",
-			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nfirst\nlast\nLevel=0\n",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=0\n",
 		},
 		{
 			name: "level is above 10",
-			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nfirst\nlast\nLevel=11\n",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=11\n",
 		},
 		{
 			name: "level is negative",
-			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nfirst\nlast\nLevel=-1\n",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=-1\n",
 		},
 	}
 
@@ -192,6 +203,9 @@ func TestParseFile_RealBooksTxt(t *testing.T) {
 			}
 			if !strings.Contains(e.Author, "Polidori") {
 				t.Errorf("The Vampyre entry Author looks wrong: %q", e.Author)
+			}
+			if e.ImageURL == "" {
+				t.Error("The Vampyre entry has no ImageURL")
 			}
 			if !strings.Contains(e.FirstLine, "dissipations attendant upon a London winter") {
 				t.Errorf("The Vampyre entry FirstLine looks wrong: %q", e.FirstLine)

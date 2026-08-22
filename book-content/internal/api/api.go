@@ -29,6 +29,7 @@ import (
 type Store interface {
 	ListBooks(ctx context.Context) ([]db.Book, error)
 	GetBook(ctx context.Context, bookID int) (db.Book, error)
+	GetBookImage(ctx context.Context, bookID int) (data []byte, contentType string, err error)
 	ListChunkIDs(ctx context.Context, bookID int) ([]int, error)
 	ListChunkSummaries(ctx context.Context, bookID int) ([]db.ChunkSummary, error)
 	GetChunk(ctx context.Context, chunkID int) (db.Chunk, error)
@@ -49,6 +50,7 @@ func NewRouter(store Store) *http.ServeMux {
 
 	mux.HandleFunc("GET /aidoku/books", h.listBooks)
 	mux.HandleFunc("GET /aidoku/book/{book_id}", h.getBook)
+	mux.HandleFunc("GET /aidoku/book/{book_id}/image", h.getBookImage)
 	mux.HandleFunc("GET /aidoku/book/{book_id}/chunks", h.listChunkIDs)
 	mux.HandleFunc("GET /aidoku/book/{book_id}/chunks/summary", h.listChunkSummaries)
 	mux.HandleFunc("GET /aidoku/chunk/{chunk_id}", h.getChunk)
@@ -89,6 +91,26 @@ func (h *handler) getBook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, book)
+}
+
+// getBookImage writes the book's cover directly (Content-Type set from
+// the sniffed value stored at download time — see GetBookImage), not
+// JSON — the one route here that doesn't go through writeJSON.
+func (h *handler) getBookImage(w http.ResponseWriter, r *http.Request) {
+	bookID, ok := pathInt(w, r, "book_id")
+	if !ok {
+		return
+	}
+	data, contentType, err := h.store.GetBookImage(r.Context(), bookID)
+	if !handleLookupErr(w, "getBookImage", err) {
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(data); err != nil {
+		log.Printf("api: getBookImage: write response: %v", err)
+	}
 }
 
 func (h *handler) listChunkIDs(w http.ResponseWriter, r *http.Request) {

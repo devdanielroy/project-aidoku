@@ -6,7 +6,7 @@
 # editions surround the story with - is trimmed).
 #
 # Format: one entry per block, blocks separated by a single blank line.
-# Each block is exactly 6 lines, in order:
+# Each block is exactly 7 lines, in order:
 #   1. the book's title, exactly as shown to the user
 #   2. the author's name, exactly as shown to the user
 #   3. the Project Gutenberg URL for the PLAIN TEXT edition specifically -
@@ -17,10 +17,14 @@
 #      pipeline/internal/clean) looks for Gutenberg's own
 #      "*** START/END OF ... PROJECT GUTENBERG EBOOK ***" markers, which
 #      only exist in this edition - any other format will fail to parse.
-#   4. the first line of the actual novel content (verbatim, as it reads
+#   4. the URL of an image to use as the book's cover - downloaded once
+#      at processing time and stored in Postgres (book.book_image), not
+#      hotlinked. A failed download is logged and skipped, not fatal -
+#      the book still processes without a cover.
+#   5. the first line of the actual novel content (verbatim, as it reads
 #      after Clean's whitespace normalization - see pipeline/internal/clean)
-#   5. the last line of the actual novel content (verbatim, same rules)
-#   6. "Level=X" - the book's assigned reading level, X from 1 (easiest)
+#   6. the last line of the actual novel content (verbatim, same rules)
+#   7. "Level=X" - the book's assigned reading level, X from 1 (easiest)
 #      to 10 (hardest). Assigned manually per book, never derived by the
 #      pipeline - see the README's Reading Levels table for what each
 #      level means (name, TOEIC range, CEFR).
@@ -36,13 +40,14 @@
 The Vampyre
 John William Polidori
 https://www.gutenberg.org/cache/epub/6087/pg6087.txt
+https://upload.wikimedia.org/wikipedia/commons/d/d3/Houghton_EC8.P7598.819va_%28A%29_-_Vampyre%2C_1819.jpg
 IT happened that in the midst of the dissipations attendant upon a London winter, there appeared at the various parties of the leaders of the ton a nobleman, more remarkable for his singularities, than his rank.
 The guardians hastened to protect Miss Aubrey; but when they arrived, it was too late. Lord Ruthven had disappeared, and Aubrey's sister had glutted the thirst of a VAMPYRE! 
 Level=10
 
-Andersen's Fairy Tales
-H. C. Andersen
-https://www.gutenberg.org/cache/epub/1597/pg1597.txt
-THE EMPEROR'S NEW CLOTHES
-Her soul flew on the sunshine to God, and there no one asked after the RED SHOES.
-Level=7
+#Andersen's Fairy Tales
+#H. C. Andersen
+#https://www.gutenberg.org/cache/epub/1597/pg1597.txt
+#THE EMPEROR'S NEW CLOTHES
+#Her soul flew on the sunshine to God, and there no one asked after the RED SHOES.
+#Level=7

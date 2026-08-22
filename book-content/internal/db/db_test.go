@@ -1,6 +1,7 @@
 package db
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -147,6 +148,58 @@ func TestGetBook_ReturnsPublishedBook(t *testing.T) {
 	}
 	if got.ID != id || got.GutenbergID != 810004 || got.Status != "published" {
 		t.Errorf("GetBook = %+v, want id=%d gutenberg_id=810004 status=published", got, id)
+	}
+}
+
+func TestGetBookImage_ReturnsStoredImage(t *testing.T) {
+	store, tx, ctx := openTestStore(t)
+
+	id := insertBook(t, tx, ctx, 810018, "published")
+	imageBytes := []byte{0xFF, 0xD8, 0xFF, 0xE0}
+	if _, err := tx.Exec(ctx, "UPDATE book SET book_image = $1, book_image_content_type = $2 WHERE id = $3", imageBytes, "image/jpeg", id); err != nil {
+		t.Fatalf("seed image: %v", err)
+	}
+
+	data, contentType, err := store.GetBookImage(ctx, id)
+	if err != nil {
+		t.Fatalf("GetBookImage: %v", err)
+	}
+	if !bytes.Equal(data, imageBytes) {
+		t.Errorf("GetBookImage() data = %v, want %v", data, imageBytes)
+	}
+	if contentType != "image/jpeg" {
+		t.Errorf("GetBookImage() contentType = %q, want %q", contentType, "image/jpeg")
+	}
+}
+
+func TestGetBookImage_NotFoundWhenNoImageStored(t *testing.T) {
+	store, tx, ctx := openTestStore(t)
+
+	id := insertBook(t, tx, ctx, 810019, "published")
+
+	if _, _, err := store.GetBookImage(ctx, id); err != ErrNotFound {
+		t.Errorf("GetBookImage on a book with no stored image: got %v, want ErrNotFound", err)
+	}
+}
+
+func TestGetBookImage_NotFoundForUnpublished(t *testing.T) {
+	store, tx, ctx := openTestStore(t)
+
+	id := insertBook(t, tx, ctx, 810020, "processing")
+	if _, err := tx.Exec(ctx, "UPDATE book SET book_image = $1, book_image_content_type = 'image/jpeg' WHERE id = $2", []byte{0xFF}, id); err != nil {
+		t.Fatalf("seed image: %v", err)
+	}
+
+	if _, _, err := store.GetBookImage(ctx, id); err != ErrNotFound {
+		t.Errorf("GetBookImage on a processing book: got %v, want ErrNotFound", err)
+	}
+}
+
+func TestGetBookImage_NotFoundForMissingID(t *testing.T) {
+	store, _, ctx := openTestStore(t)
+
+	if _, _, err := store.GetBookImage(ctx, 99999999); err != ErrNotFound {
+		t.Errorf("GetBookImage on a nonexistent id: got %v, want ErrNotFound", err)
 	}
 }
 

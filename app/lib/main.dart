@@ -6,7 +6,7 @@ import 'data/progress_store.dart';
 import 'data/score_store.dart';
 import 'data/settings_store.dart';
 import 'models/user_settings.dart';
-import 'screens/library_screen.dart';
+import 'screens/home_screen.dart';
 
 void main() {
   runApp(const AidokuApp());
@@ -102,13 +102,13 @@ class AidokuApp extends StatefulWidget {
   /// See SettingsStore's own doc comment for why this is an interface.
   final SettingsStore? settingsStore;
 
-  /// Forwarded straight through to LibraryScreen — same overridable-
-  /// for-tests pattern as every other dependency here. Without these,
-  /// a widget test driving AidokuApp end to end (Library -> Settings ->
-  /// save -> live re-theme) would hit LibraryScreen's real defaults —
-  /// an actual network call for the book list, this device's real
-  /// storage for progress/score — which is exactly what every other
-  /// screen's own tests avoid.
+  /// Forwarded straight through to HomeScreen (and from there, its two
+  /// tabs) — same overridable-for-tests pattern as every other
+  /// dependency here. Without these, a widget test driving AidokuApp
+  /// end to end (Library -> Settings -> save -> live re-theme) would
+  /// hit each tab's real defaults — an actual network call for the book
+  /// list, this device's real storage for progress/score — which is
+  /// exactly what every other screen's own tests avoid.
   final BookContentRepository? repository;
   final ProgressStore? progressStore;
   final ScoreStore? scoreStore;
@@ -153,15 +153,15 @@ class _AidokuAppState extends State<AidokuApp> {
       theme: _lightTheme,
       darkTheme: _darkTheme,
       themeMode: _toFlutterThemeMode(_themeMode),
-      home: LibraryScreen(
+      home: HomeScreen(
         repository: widget.repository,
         progressStore: widget.progressStore,
         scoreStore: widget.scoreStore,
         settingsStore: _settingsStore,
-        // SettingsScreen (opened from here) is where the reader
-        // actually changes this — see its own onThemeModeChanged doc
-        // comment for why this can't just be a normal setState() a few
-        // widgets down.
+        // SettingsScreen (opened from LibraryScreen, one of HomeScreen's
+        // tabs) is where the reader actually changes this — see its own
+        // onThemeModeChanged doc comment for why this can't just be a
+        // plain setState() a few widgets down.
         onThemeModeChanged: (mode) => setState(() => _themeMode = mode),
       ),
     );

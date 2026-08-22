@@ -197,27 +197,30 @@ go run ./book-content/cmd/server        # listens on :8080
 - [x] Chunk review — an app bar icon on the reading screen opens a scrollable list of every cleared chunk, each row a teaser + a soft green/red tint and tick/cross icon for pass/fail, derived from `ScoreStore` — no new persistence needed. Tapping a row opens that chunk again — read → questions → breakdown, reusing `ChunkPanel` as-is. A chunk that was already fully correct opens *pre-answered* (every question shown already on its correct option, via `QuestionsView.startAnswered`); only a chunk with something wrong is a real interactive redo, which records to `ScoreStore` (overwriting the earlier attempt) same as before. Finishing one chunk auto-advances to the next reviewable one, same as the main flow, and returns to the list once there's nothing further to review. New backend endpoint proivides per chunk — previews, truncated server-side to the first sentence.
 - [x] I18N — the pipeline supports multiple language pairs (EN_JP and JP_EN so far), and the Flutter app now has a Settings screen for choosing native/study language, filtering the Library to match. Run for real end to end: a full Japanese book processed and published, and selectable from the app.
 
+**In Progress**
+- [ ] Shop / per-book purchases — the app is free; books are bought individually via a Shop screen, filtered to the reader's study language, organized by reading level, with genre tags. A free teaser (first ~5 chunks) is available before buying. Payment via StoreKit (iOS) / Google Play Billing (Android).
+
 **Next up**
 - [ ] Chapter boundary detection (deliberately deferred to the chunk-grouping stage — see design doc §7)
 - [ ] Pick a real product name (see the working-name note above)
 - [ ] Personal vocab/mistake review deck — auto-collect words/grammar points answered incorrectly (or flagged) across *all* books into a standalone review list, not just chunk-level re-reading
 - [ ] Streaks + daily goal — reading streak tracking and a daily-goal nudge (AIDOKU_DESIGN.md §5's gamification section named this as TBD; now has a concrete data trigger via `UserProgress`)
 - [ ] Library dashboard — a dedicated overview screen aggregating what's currently only shown per-card (completion %, accuracy — see Score tracking/Resume progress above), plus "continue reading" surfacing across the whole library
-- [ ] Shop / per-book purchases — the app is free; books are bought individually via a Shop screen, filtered to the reader's study language, organized by reading level, with genre tags. A free teaser (first ~5 chunks) is available before buying. Payment via StoreKit (iOS) / Google Play Billing (Android).
 - [ ] `user-data` service — a fourth Go module (parallel to `pipeline`/`book-content`/`shared`) covering user accounts, purchase entitlements, account-backed progress/score/settings sync, and content complaints — separate from the read-only `book-content`.
 - [ ] User accounts — email sign-up, plus Google Sign-In (Android) and Sign in with Apple (iOS).
 - [ ] Content complaint/report button — a small button on the chunk reading screen to flag a bad translation, a mistake in the source text, or an error in a question or the breakdown.
 
 ## Adding a Book to the Catalog
 
-Books are added to a catalog file under [`pipeline/catalogs/`](./pipeline/catalogs) — one file per language pair (see [AIDOKU_DESIGN.md §7i](./AIDOKU_DESIGN.md)): [`EN_JP.txt`](./pipeline/catalogs/EN_JP.txt) for English source books with Japanese explanations, [`JP_EN.txt`](./pipeline/catalogs/JP_EN.txt) for the reverse. `cmd/process`'s `-pair` flag picks which one a run reads — there's no default. Within a file, one entry per book, entries separated by a blank line. Each entry is exactly six lines, in this order:
+Books are added to a catalog file under [`pipeline/catalogs/`](./pipeline/catalogs) — one file per language pair (see [AIDOKU_DESIGN.md §7i](./AIDOKU_DESIGN.md)): [`EN_JP.txt`](./pipeline/catalogs/EN_JP.txt) for English source books with Japanese explanations, [`JP_EN.txt`](./pipeline/catalogs/JP_EN.txt) for the reverse. `cmd/process`'s `-pair` flag picks which one a run reads — there's no default. Within a file, one entry per book, entries separated by a blank line. Each entry is exactly seven lines, in this order:
 
 1. **Title** — exactly as shown to the user.
 2. **Author** — exactly as shown to the user.
 3. **Gutenberg URL — the plain text edition specifically.** On the book's Gutenberg page (`gutenberg.org/ebooks/<id>`), that's the "Plain Text UTF-8" download link, not the HTML, EPUB, or "-images" edition. The URL usually just ends in `.txt` — e.g. `.../cache/epub/<id>/pg<id>.txt` or `.../files/<id>/<id>-0.txt`. This matters, not just as a style preference: the pipeline's `Clean` step looks for Project Gutenberg's own `*** START/END OF ... PROJECT GUTENBERG EBOOK ***` markers, which only exist in the plain-text edition — anything else (HTML in particular) fails to parse.
-4. **First line** of the actual novel content, verbatim — must match the cleaned text exactly once. Front matter (title pages, prefaces, tables of contents) before this line is trimmed away.
-5. **Last line** of the actual novel content, verbatim — same rules. Back matter (colophons, "THE END" notices, ads) after this line is trimmed away.
-6. **`Level=X`** — the book's assigned reading level, 1 (easiest) to 10 (hardest), assigned manually — see [Reading Levels](#reading-levels) below for what each number means.
+4. **Cover image URL** — downloaded once at processing time and stored in Postgres (`book.book_image`), not hotlinked. A failed download is logged and skipped, not fatal — the book still processes without a cover.
+5. **First line** of the actual novel content, verbatim — must match the cleaned text exactly once. Front matter (title pages, prefaces, tables of contents) before this line is trimmed away.
+6. **Last line** of the actual novel content, verbatim — same rules. Back matter (colophons, "THE END" notices, ads) after this line is trimmed away.
+7. **`Level=X`** — the book's assigned reading level, 1 (easiest) to 10 (hardest), assigned manually — see [Reading Levels](#reading-levels) below for what each number means.
 
 A `# comment` line is ignored by the parser wherever it appears — useful for a section header, or for commenting out an entry, but no longer needed per-entry now that title/author are real fields.
 

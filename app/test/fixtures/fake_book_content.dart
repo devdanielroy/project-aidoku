@@ -230,6 +230,15 @@ const _breakdownByChunk = {
   103: '【文構造】Test breakdown for chunk 103.',
 };
 
+/// A tiny valid PNG (a single transparent pixel) — enough for
+/// Image.memory to decode successfully in a widget test without
+/// shipping a real cover file. Used by fakeBookContentClient's [images]
+/// param.
+final testImageBytes = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY'
+  '42YAAAAASUVORK5CYII=',
+);
+
 /// An http.Client whose responses are these fixtures — pass to
 /// BookContentRepository(client: fakeBookContentClient()) in tests.
 ///
@@ -240,14 +249,33 @@ const _breakdownByChunk = {
 /// than one pair available. Every other endpoint stays tied to
 /// testBook/testChunks regardless — nothing needs to actually read
 /// testBookOtherPair's content.
+///
+/// [images] maps a book id to the cover bytes GET
+/// /aidoku/book/{id}/image should return for it — a book id with no
+/// entry 404s from that route, same as a real book with no stored
+/// cover (db/schema.sql's book_image, nullable).
 http.Client fakeBookContentClient({
   List<Map<String, dynamic>> books = const [testBook],
+  Map<int, List<int>> images = const {},
 }) {
   return MockClient((request) async {
     final path = request.url.path;
 
     if (path == '/aidoku/books') {
       return _ok({'books': books});
+    }
+    final imageMatch = RegExp(r'^/aidoku/book/(\d+)/image$').firstMatch(path);
+    if (imageMatch != null) {
+      final id = int.parse(imageMatch.group(1)!);
+      final bytes = images[id];
+      if (bytes == null) {
+        return http.Response('', 404);
+      }
+      return http.Response.bytes(
+        bytes,
+        200,
+        headers: {'content-type': 'image/png'},
+      );
     }
     if (RegExp(r'^/aidoku/book/\d+$').hasMatch(path)) {
       return _ok(testBook);

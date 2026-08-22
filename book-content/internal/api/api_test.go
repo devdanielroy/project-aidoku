@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,7 @@ import (
 type fakeStore struct {
 	listBooks          func(ctx context.Context) ([]db.Book, error)
 	getBook            func(ctx context.Context, bookID int) (db.Book, error)
+	getBookImage       func(ctx context.Context, bookID int) ([]byte, string, error)
 	listChunkIDs       func(ctx context.Context, bookID int) ([]int, error)
 	listChunkSummaries func(ctx context.Context, bookID int) ([]db.ChunkSummary, error)
 	getChunk           func(ctx context.Context, chunkID int) (db.Chunk, error)
@@ -28,6 +30,9 @@ type fakeStore struct {
 func (f *fakeStore) ListBooks(ctx context.Context) ([]db.Book, error) { return f.listBooks(ctx) }
 func (f *fakeStore) GetBook(ctx context.Context, bookID int) (db.Book, error) {
 	return f.getBook(ctx, bookID)
+}
+func (f *fakeStore) GetBookImage(ctx context.Context, bookID int) ([]byte, string, error) {
+	return f.getBookImage(ctx, bookID)
 }
 func (f *fakeStore) ListChunkIDs(ctx context.Context, bookID int) ([]int, error) {
 	return f.listChunkIDs(ctx, bookID)
@@ -192,6 +197,50 @@ func TestGetBook_OK(t *testing.T) {
 	decodeJSON(t, rec, &got)
 	if got.ID != 42 || got.Title != "The Vampyre" {
 		t.Errorf("body = %+v, want id=42 title=The Vampyre", got)
+	}
+}
+
+func TestGetBookImage_NotFoundMapsTo404(t *testing.T) {
+	store := &fakeStore{
+		getBookImage: func(ctx context.Context, bookID int) ([]byte, string, error) {
+			return nil, "", db.ErrNotFound
+		},
+	}
+	rec := doRequest(t, NewRouter(store), "GET", "/aidoku/book/999/image")
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestGetBookImage_NonIntegerIDIs400(t *testing.T) {
+	rec := doRequest(t, NewRouter(&fakeStore{}), "GET", "/aidoku/book/not-a-number/image")
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestGetBookImage_OK(t *testing.T) {
+	imageBytes := []byte{0xFF, 0xD8, 0xFF, 0xE0}
+	store := &fakeStore{
+		getBookImage: func(ctx context.Context, bookID int) ([]byte, string, error) {
+			if bookID != 42 {
+				t.Errorf("GetBookImage called with bookID=%d, want 42", bookID)
+			}
+			return imageBytes, "image/jpeg", nil
+		},
+	}
+	rec := doRequest(t, NewRouter(store), "GET", "/aidoku/book/42/image")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "image/jpeg" {
+		t.Errorf("Content-Type = %q, want %q", got, "image/jpeg")
+	}
+	if !bytes.Equal(rec.Body.Bytes(), imageBytes) {
+		t.Errorf("body = %v, want %v", rec.Body.Bytes(), imageBytes)
 	}
 }
 

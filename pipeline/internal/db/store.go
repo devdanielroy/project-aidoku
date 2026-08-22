@@ -32,6 +32,17 @@ type Book struct {
 	TargetLanguage string
 	NativeLanguage string
 	Status         string
+
+	// Image/ImageContentType are the book's cover, downloaded from the
+	// catalog entry's ImageURL (see cmd/process, internal/ingest.Client.
+	// FetchImage) — both empty/nil when no cover was downloaded, whether
+	// because the catalog entry had no ImageURL or the download
+	// soft-failed (see catalog.Entry.ImageURL's own doc comment). Not
+	// set by NewBookFromEntry itself, which is a pure conversion with no
+	// I/O — the caller downloads the image separately and attaches it
+	// here before calling UpsertBook.
+	Image            []byte
+	ImageContentType string
 }
 
 // NewBookFromEntry builds a Book from a catalog.Entry and the pair that
@@ -67,9 +78,21 @@ func (s *Store) UpsertBook(ctx context.Context, b Book) (int, error) {
 		return 0, fmt.Errorf("db: UpsertBook: TargetLanguage and NativeLanguage are both required (see langpair.ByCode)")
 	}
 
+	// nil/nil (not "", which pgx would happily write as an empty, non-
+	// NULL bytea) when there's no image to store, so the COALESCE below
+	// can tell "this run has no image" apart from "this run has an
+	// image that happens to be empty" (which should never occur, but a
+	// pointer distinguishing absence is the correct type either way).
+	var image []byte
+	var imageContentType *string
+	if len(b.Image) > 0 && b.ImageContentType != "" {
+		image = b.Image
+		imageContentType = &b.ImageContentType
+	}
+
 	const q = `
-		INSERT INTO book (gutenberg_id, title, author, source_url, level, target_language, native_language, status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO book (gutenberg_id, title, author, source_url, level, target_language, native_language, status, book_image, book_image_content_type)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (gutenberg_id) DO UPDATE SET
 			title = EXCLUDED.title,
 			author = EXCLUDED.author,
@@ -77,11 +100,17 @@ func (s *Store) UpsertBook(ctx context.Context, b Book) (int, error) {
 			level = EXCLUDED.level,
 			target_language = EXCLUDED.target_language,
 			native_language = EXCLUDED.native_language,
-			status = EXCLUDED.status
+			status = EXCLUDED.status,
+			-- A soft-failed download on a re-run (EXCLUDED.book_image
+			-- NULL) must not wipe out a cover a previous run already
+			-- stored successfully — keep the existing row's image
+			-- unless this run actually has a new one.
+			book_image = COALESCE(EXCLUDED.book_image, book.book_image),
+			book_image_content_type = COALESCE(EXCLUDED.book_image_content_type, book.book_image_content_type)
 		RETURNING id`
 
 	var id int
-	err := s.db.QueryRow(ctx, q, b.GutenbergID, b.Title, b.Author, b.SourceURL, int(b.Level), b.TargetLanguage, b.NativeLanguage, status).Scan(&id)
+	err := s.db.QueryRow(ctx, q, b.GutenbergID, b.Title, b.Author, b.SourceURL, int(b.Level), b.TargetLanguage, b.NativeLanguage, status, image, imageContentType).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("db: UpsertBook: %w", err)
 	}

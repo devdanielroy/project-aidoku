@@ -1,7 +1,9 @@
 package db
 
 import (
+	"bytes"
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -75,7 +77,7 @@ func TestNewBookFromEntry(t *testing.T) {
 		TargetLanguage: langpair.JP_EN.Target,
 		NativeLanguage: langpair.JP_EN.Native,
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("NewBookFromEntry(%+v) = %+v, want %+v", entry, got, want)
 	}
 }
@@ -133,6 +135,65 @@ func TestUpsertBook_InsertAndUpdate(t *testing.T) {
 	}
 	if title != "Updated Title" || level != int(catalog.LevelScholar) {
 		t.Errorf("after update: title=%q level=%d, want %q %d", title, level, "Updated Title", int(catalog.LevelScholar))
+	}
+}
+
+func TestUpsertBook_StoresAndUpdatesImage(t *testing.T) {
+	store, tx, ctx := openTestStore(t)
+
+	b := testBook(900013)
+	b.Image = []byte{0xFF, 0xD8, 0xFF, 0xE0} // not a real JPEG, just distinct bytes
+	b.ImageContentType = "image/jpeg"
+	id, err := store.UpsertBook(ctx, b)
+	if err != nil {
+		t.Fatalf("UpsertBook (insert with image): %v", err)
+	}
+
+	var image []byte
+	var contentType string
+	if err := tx.QueryRow(ctx, "SELECT book_image, book_image_content_type FROM book WHERE id = $1", id).Scan(&image, &contentType); err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if !bytes.Equal(image, b.Image) {
+		t.Errorf("book_image = %v, want %v", image, b.Image)
+	}
+	if contentType != "image/jpeg" {
+		t.Errorf("book_image_content_type = %q, want %q", contentType, "image/jpeg")
+	}
+
+	// Re-save without an image (a soft-failed download on a re-run) -
+	// the previously-stored image must survive, not get wiped to NULL.
+	reSaved := testBook(900013)
+	if _, err := store.UpsertBook(ctx, reSaved); err != nil {
+		t.Fatalf("UpsertBook (re-save without image): %v", err)
+	}
+	var stillImage []byte
+	if err := tx.QueryRow(ctx, "SELECT book_image FROM book WHERE id = $1", id).Scan(&stillImage); err != nil {
+		t.Fatalf("verify after re-save: %v", err)
+	}
+	if !bytes.Equal(stillImage, b.Image) {
+		t.Errorf("book_image after a re-save with no new image = %v, want it unchanged (%v)", stillImage, b.Image)
+	}
+}
+
+func TestUpsertBook_NoImageLeavesColumnsNull(t *testing.T) {
+	store, tx, ctx := openTestStore(t)
+
+	id, err := store.UpsertBook(ctx, testBook(900014))
+	if err != nil {
+		t.Fatalf("UpsertBook: %v", err)
+	}
+
+	var image []byte
+	var contentType *string
+	if err := tx.QueryRow(ctx, "SELECT book_image, book_image_content_type FROM book WHERE id = $1", id).Scan(&image, &contentType); err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if image != nil {
+		t.Errorf("book_image = %v, want NULL", image)
+	}
+	if contentType != nil {
+		t.Errorf("book_image_content_type = %q, want NULL", *contentType)
 	}
 }
 

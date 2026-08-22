@@ -8,6 +8,13 @@ import 'reading_level.dart';
 /// type stays a 1:1 match for either endpoint rather than two
 /// different shapes depending on which one produced it. See
 /// AIDOKU_DESIGN.md §4.
+///
+/// Also deliberately doesn't carry a cover image field: the cover is
+/// stored as raw bytes in Postgres (db/schema.sql's book_image, a
+/// nullable BYTEA), and base64-inlining it into every book here would
+/// bloat this response for every reader just to maybe show a
+/// thumbnail. Fetch it separately, per book, via
+/// BookContentRepository.getBookImage.
 class Book {
   final int id;
   final int gutenbergId;

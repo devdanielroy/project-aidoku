@@ -2,8 +2,8 @@
 // ThemeModeSetting on startup and reacts live when SettingsScreen saves
 // a new one, without needing to be rebuilt from scratch — see its own
 // doc comments (main.dart) for why that needs a callback threaded all
-// the way down through LibraryScreen rather than a plain setState() a
-// few widgets below the root.
+// the way down through HomeScreen/LibraryScreen rather than a plain
+// setState() a few widgets below the root.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -55,6 +55,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(materialApp(tester).themeMode, ThemeMode.system);
 
+      // Settings lives on LibraryScreen's app bar ("My Library" tab) -
+      // HomeScreen defaults to the Store tab, so switch first.
+      await tester.tap(find.text('My Library'));
+      await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.settings));
       await tester.pumpAndSettle();
 

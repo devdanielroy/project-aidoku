@@ -32,8 +32,15 @@ type Entry struct {
 	// skip books already ingested.
 	GutenbergID int
 	SourceURL   string
-	FirstLine   string
-	LastLine    string
+	// ImageURL is where to download this book's cover from — fetched
+	// once, at processing time, and stored in Postgres (book.book_image)
+	// rather than hotlinked; see internal/ingest.Client.FetchBytes and
+	// cmd/process. A failed download is soft-failed (logged, book still
+	// processes without a cover) since a missing cover is cosmetic,
+	// unlike a missing/malformed FirstLine or LastLine anchor.
+	ImageURL  string
+	FirstLine string
+	LastLine  string
 	// Level is this book's reading-comprehension level, from the
 	// catalog's "Level=" line — assigned manually per book, never
 	// derived by the pipeline. See ReadingLevel's doc comment.
@@ -63,9 +70,10 @@ func ParseFile(path string) ([]Entry, error) {
 }
 
 // Parse reads a catalog from r. See the package doc / a catalog file's
-// own header for the format: blank-line-separated blocks of exactly 6 lines
-// each (title, author, URL, first line, last line, "Level=X"), with
-// "#"-prefixed comment lines ignored wherever they appear.
+// own header for the format: blank-line-separated blocks of exactly 7
+// lines each (title, author, URL, image URL, first line, last line,
+// "Level=X"), with "#"-prefixed comment lines ignored wherever they
+// appear.
 func Parse(r io.Reader) ([]Entry, error) {
 	var block []string
 	blockStartLine := 0
@@ -75,10 +83,10 @@ func Parse(r io.Reader) ([]Entry, error) {
 		if len(block) == 0 {
 			return nil
 		}
-		if len(block) != 6 {
-			return fmt.Errorf("entry starting at line %d has %d line(s), want exactly 6 (title, author, URL, first line, last line, Level=X)", blockStartLine, len(block))
+		if len(block) != 7 {
+			return fmt.Errorf("entry starting at line %d has %d line(s), want exactly 7 (title, author, URL, image URL, first line, last line, Level=X)", blockStartLine, len(block))
 		}
-		entry, err := newEntry(block[0], block[1], block[2], block[3], block[4], block[5])
+		entry, err := newEntry(block[0], block[1], block[2], block[3], block[4], block[5], block[6])
 		if err != nil {
 			return fmt.Errorf("entry starting at line %d: %w", blockStartLine, err)
 		}
@@ -117,9 +125,12 @@ func Parse(r io.Reader) ([]Entry, error) {
 	return entries, nil
 }
 
-func newEntry(title, author, url, firstLine, lastLine, levelLine string) (Entry, error) {
+func newEntry(title, author, url, imageURL, firstLine, lastLine, levelLine string) (Entry, error) {
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 		return Entry{}, fmt.Errorf("third line of entry doesn't look like a URL: %q", url)
+	}
+	if !strings.HasPrefix(imageURL, "http://") && !strings.HasPrefix(imageURL, "https://") {
+		return Entry{}, fmt.Errorf("fourth line of entry (image URL) doesn't look like a URL: %q", imageURL)
 	}
 	id, err := gutenbergID(url)
 	if err != nil {
@@ -134,23 +145,24 @@ func newEntry(title, author, url, firstLine, lastLine, levelLine string) (Entry,
 		Author:      author,
 		GutenbergID: id,
 		SourceURL:   url,
+		ImageURL:    imageURL,
 		FirstLine:   firstLine,
 		LastLine:    lastLine,
 		Level:       level,
 	}, nil
 }
 
-// levelLinePattern matches the catalog's sixth (final) entry line, e.g.
+// levelLinePattern matches the catalog's seventh (final) entry line, e.g.
 // "Level=10".
 var levelLinePattern = regexp.MustCompile(`^Level=(\d+)$`)
 
-// parseLevel parses a catalog entry's sixth line into a ReadingLevel,
+// parseLevel parses a catalog entry's seventh line into a ReadingLevel,
 // rejecting anything that isn't exactly "Level=X" with X in [1,10] — same
 // fail-loud-on-malformed-input philosophy as gutenbergID.
 func parseLevel(line string) (ReadingLevel, error) {
 	m := levelLinePattern.FindStringSubmatch(line)
 	if m == nil {
-		return 0, fmt.Errorf("sixth line of entry doesn't look like a reading level: %q (want \"Level=X\", X from 1 to 10)", line)
+		return 0, fmt.Errorf("seventh line of entry doesn't look like a reading level: %q (want \"Level=X\", X from 1 to 10)", line)
 	}
 	n, err := strconv.Atoi(m[1])
 	if err != nil {

@@ -191,6 +191,21 @@ func filterByGutenbergID(entries []catalog.Entry, id int) []catalog.Entry {
 	return filtered
 }
 
+// fetchBookImage downloads entry's cover (catalog.Entry.ImageURL) and
+// returns its bytes plus sniffed content type — or ("", nil) on any
+// failure, logged to stderr rather than returned as an error. A
+// missing cover is cosmetic, unlike a missing/malformed text anchor, so
+// it's soft-failed: the rest of the book still processes and publishes
+// normally without one (see catalog.Entry.ImageURL's own doc comment).
+func fetchBookImage(ctx context.Context, ingestClient *ingest.Client, entry catalog.Entry) ([]byte, string) {
+	data, contentType, err := ingestClient.FetchImage(ctx, entry.ImageURL)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  [%d] cover image: %v (continuing without one)\n", entry.GutenbergID, err)
+		return nil, ""
+	}
+	return data, contentType
+}
+
 func processBook(ctx context.Context, entry catalog.Entry, pair langpair.LanguagePair, ingestClient *ingest.Client, client *anthropic.Client, store *db.Store, dryRun bool) error {
 	fmt.Printf("=== %s by %s (Gutenberg #%d) ===\n", entry.Title, entry.Author, entry.GutenbergID)
 
@@ -199,6 +214,7 @@ func processBook(ctx context.Context, entry catalog.Entry, pair langpair.Languag
 	}
 
 	book := db.NewBookFromEntry(entry, pair)
+	book.Image, book.ImageContentType = fetchBookImage(ctx, ingestClient, entry)
 	bookID, err := store.UpsertBook(ctx, book)
 	if err != nil {
 		return fmt.Errorf("save book: %w", err)

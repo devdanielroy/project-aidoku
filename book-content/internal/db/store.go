@@ -132,6 +132,36 @@ func (s *Store) GetBook(ctx context.Context, bookID int) (Book, error) {
 	return b, nil
 }
 
+// GetBookImage returns the published book's cover — data plus the
+// content type sniffed at download time (see pipeline/internal/ingest.
+// Client.FetchImage) — or ErrNotFound if bookID doesn't exist, isn't
+// published, or has no cover stored (book_image IS NULL; a book that
+// was processed before this existed, or whose cover download soft-
+// failed — see catalog.Entry.ImageURL). Deliberately not part of Book/
+// ListBooks/GetBook: those get requested for every book on every
+// Library load, and inlining a (potentially large) image blob into
+// that JSON would bloat it for every reader just to maybe show a
+// thumbnail — see the dedicated GET /aidoku/book/{id}/image route this
+// backs instead.
+func (s *Store) GetBookImage(ctx context.Context, bookID int) (data []byte, contentType string, err error) {
+	const q = `
+		SELECT book_image, book_image_content_type
+		FROM book
+		WHERE id = $1 AND status = 'published'`
+
+	err = s.db.QueryRow(ctx, q, bookID).Scan(&data, &contentType)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, "", ErrNotFound
+	}
+	if err != nil {
+		return nil, "", fmt.Errorf("db: GetBookImage: %w", err)
+	}
+	if data == nil {
+		return nil, "", ErrNotFound
+	}
+	return data, contentType, nil
+}
+
 // ListChunkIDs returns the ids of every chunk in bookID, in reading
 // order — bare ids, not full chunk objects (see the Chunk doc comment
 // for why: fetching one book's worth of chunk text in a single response
