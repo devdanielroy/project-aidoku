@@ -39,6 +39,14 @@
 -- content_type is sniffed from the downloaded bytes (Go's
 -- http.DetectContentType), not trusted blindly from the URL or the
 -- source server's response header.
+-- genres/summary: hand-curated per book, straight from the catalog
+-- entry (pipeline/internal/catalog.Entry.Genres/Summary) — never
+-- derived by the pipeline, same as title/author/level, so both are
+-- required with no default. genres is a single comma-separated TEXT
+-- value (e.g. 'Gothic, Horror, Classic'), not a Postgres array —
+-- split client-side wherever a list is actually needed for display;
+-- the CHECK below enforces the catalog's own 3-5 tag rule as a
+-- backstop. summary is a short one-line synopsis, unconstrained.
 CREATE TABLE book (
     id                       SERIAL PRIMARY KEY,
     gutenberg_id             INTEGER NOT NULL UNIQUE,
@@ -51,6 +59,8 @@ CREATE TABLE book (
     status                   TEXT NOT NULL DEFAULT 'processing' CHECK (status IN ('processing', 'published')),
     book_image               BYTEA,
     book_image_content_type  TEXT,
+    genres                   TEXT NOT NULL CHECK (array_length(string_to_array(genres, ','), 1) BETWEEN 3 AND 5),
+    summary                  TEXT NOT NULL,
     created_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

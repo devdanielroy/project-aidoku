@@ -15,6 +15,8 @@ Book _book({required String target, required String native}) {
     targetLanguage: target,
     nativeLanguage: native,
     status: 'published',
+    summary: 'A test summary.',
+    genres: const ['Fiction', 'Classic', 'Drama'],
   );
 }
 

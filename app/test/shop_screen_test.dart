@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aidoku/data/book_content_repository.dart';
+import 'package:aidoku/screens/book_detail_screen.dart';
 import 'package:aidoku/screens/shop_screen.dart';
 
 import 'fixtures/fake_book_content.dart';
@@ -115,6 +116,27 @@ void main() {
         .toSet();
     // testBook's target_language is 'en', testBookOtherPair's is 'ja'.
     expect(messages, {'ENGLISH', 'JAPANESE'});
+  });
+
+  testWidgets('tapping a book opens its detail page', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ShopScreen(
+          repository: BookContentRepository(client: fakeBookContentClient()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Test Book'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(BookDetailScreen), findsOneWidget);
+    // Title shows up on both the list card (now covered) and the
+    // detail page's AppBar - just check the screen itself opened.
+    expect(find.text('By Test Author'), findsOneWidget);
   });
 
   testWidgets('empty state when no books are published', (

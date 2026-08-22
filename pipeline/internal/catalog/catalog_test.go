@@ -12,7 +12,9 @@ func TestParse_SingleEntry(t *testing.T) {
 		"https://example.com/covers/1342.jpg\n" +
 		"It is a truth universally acknowledged.\n" +
 		"The end of the book.\n" +
-		"Level=10\n"
+		"Level=10\n" +
+		"Fiction, Romance, Satire\n" +
+		"A witty look at marriage and manners in Regency England.\n"
 
 	entries, err := Parse(strings.NewReader(src))
 	if err != nil {
@@ -30,9 +32,49 @@ func TestParse_SingleEntry(t *testing.T) {
 		FirstLine:   "It is a truth universally acknowledged.",
 		LastLine:    "The end of the book.",
 		Level:       LevelScholar,
+		Genres:      "Fiction, Romance, Satire",
+		Summary:     "A witty look at marriage and manners in Regency England.",
 	}
 	if entries[0] != want {
 		t.Errorf("entries[0] = %+v, want %+v", entries[0], want)
+	}
+}
+
+// TestParse_GenresNormalizesSpacing confirms parseGenres re-joins
+// inconsistently-spaced tags with a uniform ", " regardless of how the
+// catalog entry itself was formatted.
+func TestParse_GenresNormalizesSpacing(t *testing.T) {
+	src := "Title\nAuthor\n" +
+		"https://www.gutenberg.org/cache/epub/1/pg1.txt\n" +
+		"https://example.com/cover.jpg\nfirst\nlast\nLevel=5\n" +
+		"Fiction,Horror ,  Classic\n" +
+		"A summary.\n"
+
+	entries, err := Parse(strings.NewReader(src))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if entries[0].Genres != "Fiction, Horror, Classic" {
+		t.Errorf("Genres = %q, want %q", entries[0].Genres, "Fiction, Horror, Classic")
+	}
+}
+
+// TestParse_GenresAcceptsNonFictionAsFirstTag confirms "Non-Fiction" is
+// accepted as the first tag, not just "Fiction" - parseGenres accepts
+// exactly these two values there, nothing else.
+func TestParse_GenresAcceptsNonFictionAsFirstTag(t *testing.T) {
+	src := "Title\nAuthor\n" +
+		"https://www.gutenberg.org/cache/epub/1/pg1.txt\n" +
+		"https://example.com/cover.jpg\nfirst\nlast\nLevel=5\n" +
+		"Non-Fiction, History, Biography\n" +
+		"A summary.\n"
+
+	entries, err := Parse(strings.NewReader(src))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if entries[0].Genres != "Non-Fiction, History, Biography" {
+		t.Errorf("Genres = %q, want %q", entries[0].Genres, "Non-Fiction, History, Biography")
 	}
 }
 
@@ -47,6 +89,8 @@ func TestParse_MultipleEntriesAndComments(t *testing.T) {
 		"First line of book one.\n" +
 		"Last line of book one.\n" +
 		"Level=1\n" +
+		"Fiction, Adventure, Fantasy\n" +
+		"Summary of book one.\n" +
 		"\n" +
 		"Book Two\n" +
 		"Author Two\n" +
@@ -54,7 +98,9 @@ func TestParse_MultipleEntriesAndComments(t *testing.T) {
 		"https://example.com/covers/2.jpg\n" +
 		"First line of book two.\n" +
 		"Last line of book two.\n" +
-		"Level=10\n"
+		"Level=10\n" +
+		"Non-Fiction, Mystery, True Crime\n" +
+		"Summary of book two.\n"
 
 	entries, err := Parse(strings.NewReader(src))
 	if err != nil {
@@ -90,7 +136,7 @@ func TestParse_URLShapes(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.url, func(t *testing.T) {
-			src := "Title\nAuthor\n" + tc.url + "\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=5\n"
+			src := "Title\nAuthor\n" + tc.url + "\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=5\nFiction, Classic, Drama\nA summary.\n"
 			entries, err := Parse(strings.NewReader(src))
 			if err != nil {
 				t.Fatalf("Parse: %v", err)
@@ -103,6 +149,12 @@ func TestParse_URLShapes(t *testing.T) {
 }
 
 func TestParse_Errors(t *testing.T) {
+	// tail is a valid genres line + summary line, appended to cases
+	// below that aren't themselves testing line count - so the error
+	// each one produces is guaranteed to come from the thing its name
+	// says, not an incidental line-count mismatch.
+	const tail = "Fiction, Classic, Drama\nA summary.\n"
+
 	cases := []struct {
 		name string
 		src  string
@@ -116,40 +168,64 @@ func TestParse_Errors(t *testing.T) {
 			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\n",
 		},
 		{
-			name: "entry with 8 lines",
-			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=1\nextra\n",
+			name: "entry with 8 lines (missing summary)",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=1\nFiction, Classic, Drama\n",
+		},
+		{
+			name: "entry with 10 lines",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=1\n" + tail + "extra\n",
 		},
 		{
 			name: "third line is not a URL",
-			src:  "Title\nAuthor\nnot a url\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=1\n",
+			src:  "Title\nAuthor\nnot a url\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=1\n" + tail,
 		},
 		{
 			name: "fourth line (image URL) is not a URL",
-			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nnot a url\nfirst\nlast\nLevel=1\n",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nnot a url\nfirst\nlast\nLevel=1\n" + tail,
 		},
 		{
 			name: "URL with no recognizable Gutenberg ID",
-			src:  "Title\nAuthor\nhttps://www.gutenberg.org/some/other/path\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=1\n",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/some/other/path\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=1\n" + tail,
 		},
 		{
 			name: "level line missing the Level= prefix",
-			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\n10\n",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\n10\n" + tail,
 		},
 		{
 			name: "level is not a number",
-			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=ten\n",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=ten\n" + tail,
 		},
 		{
 			name: "level is zero",
-			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=0\n",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=0\n" + tail,
 		},
 		{
 			name: "level is above 10",
-			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=11\n",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=11\n" + tail,
 		},
 		{
 			name: "level is negative",
-			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=-1\n",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=-1\n" + tail,
+		},
+		{
+			name: "genres line has only 2 tags",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=1\nFiction, Classic\nA summary.\n",
+		},
+		{
+			name: "genres line has 6 tags",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=1\nA, B, C, D, E, F\nA summary.\n",
+		},
+		{
+			name: "genres line has an empty tag",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=1\nFiction, , Drama\nA summary.\n",
+		},
+		{
+			name: "genres line's first tag isn't Fiction or Non-Fiction",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=1\nDrama, Fiction, Classic\nA summary.\n",
+		},
+		{
+			name: "genres line's first tag is the wrong case (\"fiction\")",
+			src:  "Title\nAuthor\nhttps://www.gutenberg.org/cache/epub/1/pg1.txt\nhttps://example.com/cover.jpg\nfirst\nlast\nLevel=1\nfiction, Drama, Classic\nA summary.\n",
 		},
 	}
 
@@ -212,6 +288,12 @@ func TestParseFile_RealBooksTxt(t *testing.T) {
 			}
 			if e.Level != LevelScholar {
 				t.Errorf("The Vampyre entry Level = %v, want %v", e.Level, LevelScholar)
+			}
+			if e.Genres == "" {
+				t.Error("The Vampyre entry has no Genres")
+			}
+			if e.Summary == "" {
+				t.Error("The Vampyre entry has no Summary")
 			}
 		}
 	}

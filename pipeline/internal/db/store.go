@@ -33,6 +33,15 @@ type Book struct {
 	NativeLanguage string
 	Status         string
 
+	// Genres/Summary are carried straight through from catalog.Entry —
+	// both hand-curated per book, never derived by the pipeline, same
+	// as Title/Author. Genres stays the catalog's already-validated,
+	// ", "-joined TEXT form end to end (see catalog.Entry.Genres's own
+	// doc comment for why a raw comma-separated string rather than a
+	// Postgres array); Summary is verbatim.
+	Genres  string
+	Summary string
+
 	// Image/ImageContentType are the book's cover, downloaded from the
 	// catalog entry's ImageURL (see cmd/process, internal/ingest.Client.
 	// FetchImage) — both empty/nil when no cover was downloaded, whether
@@ -58,6 +67,8 @@ func NewBookFromEntry(e catalog.Entry, pair langpair.LanguagePair) Book {
 		Author:         e.Author,
 		SourceURL:      e.SourceURL,
 		Level:          e.Level,
+		Genres:         e.Genres,
+		Summary:        e.Summary,
 		TargetLanguage: pair.Target,
 		NativeLanguage: pair.Native,
 	}
@@ -77,6 +88,12 @@ func (s *Store) UpsertBook(ctx context.Context, b Book) (int, error) {
 	if b.TargetLanguage == "" || b.NativeLanguage == "" {
 		return 0, fmt.Errorf("db: UpsertBook: TargetLanguage and NativeLanguage are both required (see langpair.ByCode)")
 	}
+	if b.Genres == "" {
+		return 0, fmt.Errorf("db: UpsertBook: Genres is required (see catalog.Entry.Genres)")
+	}
+	if b.Summary == "" {
+		return 0, fmt.Errorf("db: UpsertBook: Summary is required (see catalog.Entry.Summary)")
+	}
 
 	// nil/nil (not "", which pgx would happily write as an empty, non-
 	// NULL bytea) when there's no image to store, so the COALESCE below
@@ -91,8 +108,8 @@ func (s *Store) UpsertBook(ctx context.Context, b Book) (int, error) {
 	}
 
 	const q = `
-		INSERT INTO book (gutenberg_id, title, author, source_url, level, target_language, native_language, status, book_image, book_image_content_type)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO book (gutenberg_id, title, author, source_url, level, target_language, native_language, status, book_image, book_image_content_type, genres, summary)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		ON CONFLICT (gutenberg_id) DO UPDATE SET
 			title = EXCLUDED.title,
 			author = EXCLUDED.author,
@@ -106,11 +123,16 @@ func (s *Store) UpsertBook(ctx context.Context, b Book) (int, error) {
 			-- stored successfully — keep the existing row's image
 			-- unless this run actually has a new one.
 			book_image = COALESCE(EXCLUDED.book_image, book.book_image),
-			book_image_content_type = COALESCE(EXCLUDED.book_image_content_type, book.book_image_content_type)
+			book_image_content_type = COALESCE(EXCLUDED.book_image_content_type, book.book_image_content_type),
+			-- Genres/summary are always supplied (validated above), so
+			-- unlike the cover these overwrite unconditionally, same as
+			-- title/author.
+			genres = EXCLUDED.genres,
+			summary = EXCLUDED.summary
 		RETURNING id`
 
 	var id int
-	err := s.db.QueryRow(ctx, q, b.GutenbergID, b.Title, b.Author, b.SourceURL, int(b.Level), b.TargetLanguage, b.NativeLanguage, status, image, imageContentType).Scan(&id)
+	err := s.db.QueryRow(ctx, q, b.GutenbergID, b.Title, b.Author, b.SourceURL, int(b.Level), b.TargetLanguage, b.NativeLanguage, status, image, imageContentType, b.Genres, b.Summary).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("db: UpsertBook: %w", err)
 	}

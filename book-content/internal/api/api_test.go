@@ -185,7 +185,13 @@ func TestGetBook_OK(t *testing.T) {
 			if bookID != 42 {
 				t.Errorf("GetBook called with bookID=%d, want 42", bookID)
 			}
-			return db.Book{ID: 42, Title: "The Vampyre", Status: "published"}, nil
+			return db.Book{
+				ID:      42,
+				Title:   "The Vampyre",
+				Status:  "published",
+				Genres:  "Fiction, Gothic, Horror",
+				Summary: "A young Englishman falls under the spell of a mysterious nobleman.",
+			}, nil
 		},
 	}
 	rec := doRequest(t, NewRouter(store), "GET", "/aidoku/book/42")
@@ -197,6 +203,12 @@ func TestGetBook_OK(t *testing.T) {
 	decodeJSON(t, rec, &got)
 	if got.ID != 42 || got.Title != "The Vampyre" {
 		t.Errorf("body = %+v, want id=42 title=The Vampyre", got)
+	}
+	if got.Genres != "Fiction, Gothic, Horror" {
+		t.Errorf("Genres = %q, want %q", got.Genres, "Fiction, Gothic, Horror")
+	}
+	if got.Summary != "A young Englishman falls under the spell of a mysterious nobleman." {
+		t.Errorf("Summary = %q, unexpected", got.Summary)
 	}
 }
 

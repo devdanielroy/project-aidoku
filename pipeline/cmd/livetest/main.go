@@ -54,6 +54,8 @@ var book = db.Book{
 	Author:         "Jane Austen",
 	SourceURL:      "https://www.gutenberg.org/cache/epub/1342/pg1342.txt",
 	Level:          catalog.LevelScholar,
+	Genres:         "Romance, Classic, Satire",
+	Summary:        "A witty look at marriage and manners in Regency England.",
 	TargetLanguage: pair.Target,
 	NativeLanguage: pair.Native,
 }

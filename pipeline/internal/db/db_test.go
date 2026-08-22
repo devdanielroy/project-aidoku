@@ -49,6 +49,8 @@ func testBook(gutenbergID int) Book {
 		Author:         "Test Author",
 		SourceURL:      "https://example.com/test.txt",
 		Level:          catalog.LevelBookworm,
+		Genres:         "Fiction, Classic, Drama",
+		Summary:        "A test summary.",
 		TargetLanguage: langpair.EN_JP.Target,
 		NativeLanguage: langpair.EN_JP.Native,
 	}
@@ -65,6 +67,8 @@ func TestNewBookFromEntry(t *testing.T) {
 		FirstLine:   "IT happened that in the midst of the dissipations...",
 		LastLine:    "...glutted the thirst of a VAMPYRE!",
 		Level:       catalog.LevelScholar,
+		Genres:      "Fiction, Gothic, Horror",
+		Summary:     "A young Englishman falls under the spell of a mysterious nobleman.",
 	}
 
 	got := NewBookFromEntry(entry, langpair.JP_EN)
@@ -74,6 +78,8 @@ func TestNewBookFromEntry(t *testing.T) {
 		GutenbergID:    6087,
 		SourceURL:      "https://www.gutenberg.org/cache/epub/6087/pg6087.txt",
 		Level:          catalog.LevelScholar,
+		Genres:         "Fiction, Gothic, Horror",
+		Summary:        "A young Englishman falls under the spell of a mysterious nobleman.",
 		TargetLanguage: langpair.JP_EN.Target,
 		NativeLanguage: langpair.JP_EN.Native,
 	}
@@ -95,6 +101,53 @@ func TestUpsertBook_RejectsMissingLanguagePair(t *testing.T) {
 	b.NativeLanguage = ""
 	if _, err := store.UpsertBook(ctx, b); err == nil {
 		t.Fatal("UpsertBook with empty NativeLanguage = nil error, want an error")
+	}
+}
+
+func TestUpsertBook_RejectsMissingGenresOrSummary(t *testing.T) {
+	store, _, ctx := openTestStore(t)
+
+	b := testBook(900015)
+	b.Genres = ""
+	if _, err := store.UpsertBook(ctx, b); err == nil {
+		t.Fatal("UpsertBook with empty Genres = nil error, want an error")
+	}
+
+	b = testBook(900016)
+	b.Summary = ""
+	if _, err := store.UpsertBook(ctx, b); err == nil {
+		t.Fatal("UpsertBook with empty Summary = nil error, want an error")
+	}
+}
+
+// TestUpsertBook_GenresAndSummaryOverwriteUnconditionally confirms these
+// two behave like Title/Author on a re-run (always take the new value),
+// unlike the cover image's COALESCE-and-keep-the-old-one treatment —
+// there's no soft-fail case for hand-curated catalog fields.
+func TestUpsertBook_GenresAndSummaryOverwriteUnconditionally(t *testing.T) {
+	store, tx, ctx := openTestStore(t)
+
+	id, err := store.UpsertBook(ctx, testBook(900017))
+	if err != nil {
+		t.Fatalf("UpsertBook (insert): %v", err)
+	}
+
+	updated := testBook(900017)
+	updated.Genres = "Fiction, Adventure, Fantasy"
+	updated.Summary = "A revised summary."
+	if _, err := store.UpsertBook(ctx, updated); err != nil {
+		t.Fatalf("UpsertBook (update): %v", err)
+	}
+
+	var genres, summary string
+	if err := tx.QueryRow(ctx, "SELECT genres, summary FROM book WHERE id = $1", id).Scan(&genres, &summary); err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if genres != "Fiction, Adventure, Fantasy" {
+		t.Errorf("genres = %q, want %q", genres, "Fiction, Adventure, Fantasy")
+	}
+	if summary != "A revised summary." {
+		t.Errorf("summary = %q, want %q", summary, "A revised summary.")
 	}
 }
 

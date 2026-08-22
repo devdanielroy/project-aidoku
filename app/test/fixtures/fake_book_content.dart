@@ -22,6 +22,8 @@ const testBook = {
   'target_language': 'en',
   'native_language': 'ja',
   'status': 'published',
+  'genres': 'Fiction, Gothic, Horror, Classic',
+  'summary': 'A test summary.',
 };
 
 /// A second book in the opposite language pair from testBook — only
@@ -41,6 +43,8 @@ const testBookOtherPair = {
   'target_language': 'ja',
   'native_language': 'en',
   'status': 'published',
+  'genres': 'Fiction, Adventure, Fantasy, Classic',
+  'summary': 'Another test summary.',
 };
 
 const testChunks = [

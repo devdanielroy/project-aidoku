@@ -37,6 +37,16 @@ class Book {
   final String nativeLanguage;
   final String status;
 
+  /// A short one-line synopsis, hand-curated per book — never generated
+  /// (see pipeline/internal/catalog.Entry.Summary's own doc comment).
+  final String summary;
+
+  /// 3-5 tags, e.g. ["Gothic", "Horror", "Classic"] — already split and
+  /// trimmed here from book-content's single comma-separated TEXT value
+  /// (see book-content/internal/db's Book.Genres for why it's a raw
+  /// string on the wire rather than a JSON array).
+  final List<String> genres;
+
   const Book({
     required this.id,
     required this.gutenbergId,
@@ -47,6 +57,8 @@ class Book {
     required this.targetLanguage,
     required this.nativeLanguage,
     required this.status,
+    required this.summary,
+    required this.genres,
   });
 
   factory Book.fromJson(Map<String, dynamic> json) {
@@ -60,6 +72,11 @@ class Book {
       targetLanguage: json['target_language'] as String,
       nativeLanguage: json['native_language'] as String,
       status: json['status'] as String,
+      summary: json['summary'] as String,
+      genres: (json['genres'] as String)
+          .split(',')
+          .map((g) => g.trim())
+          .toList(),
     );
   }
 

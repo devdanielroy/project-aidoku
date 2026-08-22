@@ -43,8 +43,8 @@ func openTestStore(t *testing.T) (*Store, pgx.Tx, context.Context) {
 func insertBook(t *testing.T, tx pgx.Tx, ctx context.Context, gutenbergID int, status string) int {
 	t.Helper()
 	const q = `
-		INSERT INTO book (gutenberg_id, title, author, source_url, level, target_language, native_language, status)
-		VALUES ($1, 'Test Book', 'Test Author', 'https://example.com/test.txt', 5, 'en', 'ja', $2)
+		INSERT INTO book (gutenberg_id, title, author, source_url, level, target_language, native_language, status, genres, summary)
+		VALUES ($1, 'Test Book', 'Test Author', 'https://example.com/test.txt', 5, 'en', 'ja', $2, 'Fiction, Classic, Drama', 'A test summary.')
 		RETURNING id`
 	var id int
 	if err := tx.QueryRow(ctx, q, gutenbergID, status).Scan(&id); err != nil {
@@ -148,6 +148,12 @@ func TestGetBook_ReturnsPublishedBook(t *testing.T) {
 	}
 	if got.ID != id || got.GutenbergID != 810004 || got.Status != "published" {
 		t.Errorf("GetBook = %+v, want id=%d gutenberg_id=810004 status=published", got, id)
+	}
+	if got.Genres != "Fiction, Classic, Drama" {
+		t.Errorf("GetBook.Genres = %q, want %q", got.Genres, "Fiction, Classic, Drama")
+	}
+	if got.Summary != "A test summary." {
+		t.Errorf("GetBook.Summary = %q, want %q", got.Summary, "A test summary.")
 	}
 }
 
