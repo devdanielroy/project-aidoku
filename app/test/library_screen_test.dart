@@ -336,10 +336,15 @@ void main() {
       await tester.tap(find.text('Open Settings'));
       await tester.pumpAndSettle();
 
+      // Settings' own My Account section, above these fields, pushes
+      // them far enough down that they aren't reliably hit-testable
+      // without this (see settings_screen_test.dart for the same fix).
+      await tester.ensureVisible(find.byType(DropdownButtonFormField<String>));
       await tester.tap(find.byType(DropdownButtonFormField<String>));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Japanese').last);
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byType(Checkbox));
       await tester.tap(find.byType(Checkbox));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Save'));

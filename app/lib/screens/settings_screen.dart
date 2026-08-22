@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 
+import '../data/auth_repository.dart';
 import '../data/book_content_repository.dart';
 import '../data/local_settings_store.dart';
 import '../data/settings_store.dart';
+import '../data/supabase_auth_repository.dart';
 import '../models/book.dart';
 import '../models/language_pair.dart';
 import '../models/reading_level.dart';
 import '../models/user_settings.dart';
+import 'account_screen.dart';
 
 /// Lets the reader configure their top-level settings: display name,
 /// native language, and which language(s) they're studying — see
@@ -29,6 +32,11 @@ class SettingsScreen extends StatefulWidget {
   /// See SettingsStore's own doc comment for why this is an interface.
   final SettingsStore? settingsStore;
 
+  /// Overridable for tests — defaults to the real thing. See
+  /// AuthRepository's own doc comment for why this is an interface;
+  /// forwarded to the "My Account" row's AccountScreen.
+  final AuthRepository? authRepository;
+
   /// Called with the saved settings' theme mode on every successful
   /// save (whether or not it actually changed — a redundant call is
   /// harmless). AidokuApp (main.dart) is the one thing that needs to
@@ -43,6 +51,7 @@ class SettingsScreen extends StatefulWidget {
     super.key,
     this.repository,
     this.settingsStore,
+    this.authRepository,
     this.onThemeModeChanged,
   });
 
@@ -96,6 +105,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           return _SettingsForm(
             initial: data.settings,
             pairs: data.pairs,
+            authRepository: widget.authRepository,
             onSave: _save,
           );
         },
@@ -107,11 +117,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 class _SettingsForm extends StatefulWidget {
   final UserSettings initial;
   final Set<LanguagePair> pairs;
+  final AuthRepository? authRepository;
   final Future<void> Function(UserSettings) onSave;
 
   const _SettingsForm({
     required this.initial,
     required this.pairs,
+    required this.authRepository,
     required this.onSave,
   });
 
@@ -222,6 +234,8 @@ class _SettingsFormState extends State<_SettingsForm> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        _AccountSection(authRepository: widget.authRepository),
+        const SizedBox(height: 24),
         Text('Display name', style: theme.textTheme.titleSmall),
         const SizedBox(height: 8),
         TextField(
@@ -366,6 +380,51 @@ class _StudyLanguageTile extends StatelessWidget {
               )
             : null,
         onTap: () => onToggleEnrolled(!enrolled),
+      ),
+    );
+  }
+}
+
+/// "My Account" row — opens AccountScreen, showing the signed-in
+/// email as a subtitle once there is one. Its own State (rather than
+/// living inline in _SettingsForm) so returning from AccountScreen can
+/// refresh just this row, same "await push, then refresh what changed"
+/// pattern as LibraryScreen's _BookCard after ReadingSessionScreen.
+class _AccountSection extends StatefulWidget {
+  final AuthRepository? authRepository;
+
+  const _AccountSection({required this.authRepository});
+
+  @override
+  State<_AccountSection> createState() => _AccountSectionState();
+}
+
+class _AccountSectionState extends State<_AccountSection> {
+  late final AuthRepository _authRepository =
+      widget.authRepository ?? const SupabaseAuthRepository();
+
+  Future<void> _openAccount() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AccountScreen(authRepository: _authRepository),
+      ),
+    );
+    // Refresh regardless of how the reader left (signed in, signed out,
+    // or just backed out) - see _BookCard's own doc comment for why
+    // this can't just be a plain setState() call site inside onTap.
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = _authRepository.currentUser;
+    return Card(
+      child: ListTile(
+        leading: const Icon(Icons.account_circle),
+        title: const Text('My Account'),
+        subtitle: Text(user == null ? 'Not signed in' : 'Signed in as ${user.email}'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: _openAccount,
       ),
     );
   }

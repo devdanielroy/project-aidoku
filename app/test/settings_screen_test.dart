@@ -3,8 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aidoku/data/book_content_repository.dart';
 import 'package:aidoku/models/user_settings.dart';
+import 'package:aidoku/screens/account_screen.dart';
 import 'package:aidoku/screens/settings_screen.dart';
 
+import 'fixtures/fake_auth_repository.dart';
 import 'fixtures/fake_book_content.dart';
 import 'fixtures/fake_settings_store.dart';
 
@@ -52,6 +54,9 @@ void main() {
       // Nothing to study yet - no native language picked.
       expect(find.text('Pick a native language first.'), findsOneWidget);
 
+      // My Account, above it, pushes the native-language dropdown far
+      // enough down that it isn't reliably hit-testable without this.
+      await tester.ensureVisible(find.byType(DropdownButtonFormField<String>));
       await tester.tap(find.byType(DropdownButtonFormField<String>));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Japanese').last);
@@ -79,12 +84,16 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // My Account, above it, pushes the rest of the form far enough
+    // down that these aren't reliably hit-testable without this.
+    await tester.ensureVisible(find.byType(DropdownButtonFormField<String>));
     await tester.tap(find.byType(DropdownButtonFormField<String>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Japanese').last);
     await tester.pumpAndSettle();
 
     expect(find.text('Active'), findsNothing);
+    await tester.ensureVisible(find.byType(Checkbox));
     await tester.tap(find.byType(Checkbox));
     await tester.pumpAndSettle();
     expect(find.text('Active'), findsOneWidget);
@@ -105,10 +114,12 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField), 'Roi');
+    await tester.ensureVisible(find.byType(DropdownButtonFormField<String>));
     await tester.tap(find.byType(DropdownButtonFormField<String>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Japanese').last);
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byType(Checkbox));
     await tester.tap(find.byType(Checkbox));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Save'));
@@ -171,6 +182,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Roi'), findsOneWidget);
+    // 'Active' sits far enough down (My Account, above it, pushes
+    // everything else down) that ListView's sliver hasn't necessarily
+    // built it yet - dragUntilVisible scrolls incrementally until it
+    // has, unlike ensureVisible, which needs the element to already
+    // exist to find it.
+    await tester.dragUntilVisible(
+      find.text('Active'),
+      find.byType(ListView),
+      const Offset(0, -50),
+    );
     expect(find.text('Active'), findsOneWidget);
   });
 
@@ -269,6 +290,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView), const Offset(0, -1000));
+    await tester.pumpAndSettle();
 
     final dropdown = tester.widget<DropdownButtonFormField<int?>>(
       find.byType(DropdownButtonFormField<int?>),
@@ -289,6 +312,8 @@ void main() {
         ),
       ),
     );
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView), const Offset(0, -1000));
     await tester.pumpAndSettle();
 
     final dropdown = tester.widget<DropdownButtonFormField<int?>>(
@@ -378,9 +403,18 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      // My Account, above it, pushes 'Active' far enough down that
+      // ListView's sliver hasn't necessarily built it yet.
+      await tester.dragUntilVisible(
+        find.text('Active'),
+        find.byType(ListView),
+        const Offset(0, -50),
+      );
       expect(find.text('Active'), findsOneWidget);
 
-      // Switch native language from Japanese to English.
+      // Switch native language from Japanese to English - back up near
+      // the top now, past where the scroll above just landed.
+      await tester.ensureVisible(find.byType(DropdownButtonFormField<String>));
       await tester.tap(find.byType(DropdownButtonFormField<String>));
       await tester.pumpAndSettle();
       await tester.tap(find.text('English').last);
@@ -393,4 +427,82 @@ void main() {
       expect(checkbox.value, isFalse);
     },
   );
+
+  group('My Account', () {
+    testWidgets('shows "Not signed in" when nobody is', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SettingsScreen(
+            repository: twoPairRepository(),
+            settingsStore: FakeSettingsStore(),
+            authRepository: FakeAuthRepository(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // My Account is the first item in the scrollable form (see
+      // _AccountSection's own placement) - already visible, no scroll
+      // needed.
+
+      expect(find.text('Not signed in'), findsOneWidget);
+    });
+
+    testWidgets('shows the signed-in email when there is one', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SettingsScreen(
+            repository: twoPairRepository(),
+            settingsStore: FakeSettingsStore(),
+            authRepository: FakeAuthRepository(
+              initialUser: (id: '1', email: 'me@example.com'),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Signed in as me@example.com'), findsOneWidget);
+    });
+
+    testWidgets('tapping it opens AccountScreen, and returning refreshes '
+        'the subtitle', (WidgetTester tester) async {
+      final auth = FakeAuthRepository();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SettingsScreen(
+            repository: twoPairRepository(),
+            settingsStore: FakeSettingsStore(),
+            authRepository: auth,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('My Account'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AccountScreen), findsOneWidget);
+
+      // Sign in from within AccountScreen, then back out to Settings -
+      // the row should reflect the new state without needing Settings
+      // itself to be rebuilt from scratch.
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Email'),
+        'me@example.com',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Password'),
+        'hunter2',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Log In'));
+      await tester.pumpAndSettle();
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Signed in as me@example.com'), findsOneWidget);
+    });
+  });
 }

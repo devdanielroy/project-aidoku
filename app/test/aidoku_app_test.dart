@@ -56,9 +56,7 @@ void main() {
       expect(materialApp(tester).themeMode, ThemeMode.system);
 
       // Settings lives on LibraryScreen's app bar ("My Library" tab) -
-      // HomeScreen defaults to the Store tab, so switch first.
-      await tester.tap(find.text('My Library'));
-      await tester.pumpAndSettle();
+      // HomeScreen defaults to My Library already, so no need to switch.
       await tester.tap(find.byIcon(Icons.settings));
       await tester.pumpAndSettle();
 

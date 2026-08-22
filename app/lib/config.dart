@@ -23,4 +23,27 @@ class AppConfig {
     'BOOK_CONTENT_BASE_URL',
     defaultValue: 'http://localhost:8080',
   );
+
+  /// Supabase project URL and publishable API key (see
+  /// lib/data/supabase_auth_repository.dart) — used for account auth
+  /// only; app data stays in this project's own Postgres (see
+  /// db/schema.sql), not Supabase's. The publishable key is safe to
+  /// bake in here despite being called a "key" — unlike a secret/
+  /// service_role key, it's explicitly designed to be public in client
+  /// code (see the Supabase project's own dashboard, which labels it as
+  /// such); real access control happens at the Supabase project level,
+  /// not by hiding this value. Defaults match this project's actual
+  /// Supabase project — see .env (read by the Go backend only, not
+  /// Flutter — kept here too just as the one place both sides' config
+  /// is recorded) — override for a different project the same way as
+  /// BOOK_CONTENT_BASE_URL.
+  static const String supabaseUrl = String.fromEnvironment(
+    'SUPABASE_URL',
+    defaultValue: 'https://htyumvxkfavkhawvqilr.supabase.co',
+  );
+
+  static const String supabasePublishableKey = String.fromEnvironment(
+    'SUPABASE_PUBLISHABLE_KEY',
+    defaultValue: 'sb_publishable_TRcNS0HUwcQkgVYRQgwVIw_e_hTtKx6',
+  );
 }

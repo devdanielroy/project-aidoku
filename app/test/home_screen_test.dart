@@ -5,7 +5,7 @@
 // tab is showing" rather than a screen-specific widget's presence —
 // IndexedStack wraps its non-selected child in an invisible Visibility
 // subtree that the widget-test finder doesn't walk into, so
-// find.byType(LibraryScreen) reports 0 while Store is selected even
+// find.byType(ShopScreen) reports 0 while My Library is selected even
 // though its State genuinely is still alive underneath (proven by the
 // last test here, which checks that directly).
 
@@ -14,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aidoku/data/book_content_repository.dart';
 import 'package:aidoku/screens/home_screen.dart';
-import 'package:aidoku/screens/shop_screen.dart';
+import 'package:aidoku/screens/library_screen.dart';
 
 import 'fixtures/fake_book_content.dart';
 import 'fixtures/fake_progress_store.dart';
@@ -32,42 +32,40 @@ void main() {
   int selectedIndex(WidgetTester tester) =>
       tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex;
 
-  testWidgets('defaults to the Store tab', (WidgetTester tester) async {
+  testWidgets('defaults to the My Library tab', (WidgetTester tester) async {
     await tester.pumpWidget(MaterialApp(home: home()));
     await tester.pumpAndSettle();
 
     expect(selectedIndex(tester), 0);
-    expect(find.byType(ShopScreen), findsOneWidget);
-    // Not asserting LibraryScreen is findable here too: IndexedStack
+    expect(find.byType(LibraryScreen), findsOneWidget);
+    // Not asserting ShopScreen is findable here too: IndexedStack
     // genuinely keeps its non-selected child's State alive (see
     // "switching tabs preserves state" below, which proves that the
     // meaningful way), but the widget-test finder doesn't walk into the
     // invisible Visibility subtree IndexedStack wraps it in, so
-    // find.byType(LibraryScreen) reports 0 here despite it still
+    // find.byType(ShopScreen) reports 0 here despite it still
     // existing at runtime — a test-framework quirk, not a real gap.
   });
 
-  testWidgets('tapping My Library selects that tab', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('tapping Store selects that tab', (WidgetTester tester) async {
     await tester.pumpWidget(MaterialApp(home: home()));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('My Library'));
+    await tester.tap(find.text('Store'));
     await tester.pumpAndSettle();
 
     expect(selectedIndex(tester), 1);
   });
 
-  testWidgets('tapping Store from My Library switches back', (
+  testWidgets('tapping My Library from Store switches back', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(MaterialApp(home: home()));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('My Library'));
-    await tester.pumpAndSettle();
     await tester.tap(find.text('Store'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('My Library'));
     await tester.pumpAndSettle();
 
     expect(selectedIndex(tester), 0);
@@ -102,8 +100,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('My Library'));
-    await tester.pumpAndSettle();
+    // My Library is already the default tab - no tap needed to see it.
     expect(find.text('Accuracy: 67% (2/3)'), findsOneWidget);
 
     await tester.tap(find.text('Store'));

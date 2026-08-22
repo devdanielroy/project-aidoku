@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'config.dart';
 import 'data/book_content_repository.dart';
 import 'data/local_settings_store.dart';
 import 'data/progress_store.dart';
@@ -8,7 +10,16 @@ import 'data/settings_store.dart';
 import 'models/user_settings.dart';
 import 'screens/home_screen.dart';
 
-void main() {
+Future<void> main() async {
+  // Needed before any async work runs ahead of runApp() - Supabase.
+  // initialize() below does real (if quick, local-only) setup work.
+  WidgetsFlutterBinding.ensureInitialized();
+  // Account auth only (see SupabaseAuthRepository's own doc comment) -
+  // this app's own data stays in its own Postgres, not Supabase's.
+  await Supabase.initialize(
+    url: AppConfig.supabaseUrl,
+    publishableKey: AppConfig.supabasePublishableKey,
+  );
   runApp(const AidokuApp());
 }
 

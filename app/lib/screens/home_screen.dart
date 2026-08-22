@@ -9,11 +9,13 @@ import 'library_screen.dart';
 import 'shop_screen.dart';
 
 /// The app's root screen: a bottom NavigationBar switching between
-/// ShopScreen ("Store") and LibraryScreen ("My Library") — Store first,
-/// matching the order they were asked for. Each tab keeps its own
-/// Scaffold/AppBar (nested Scaffolds are a normal, supported Flutter
-/// pattern) rather than this screen owning one shared AppBar, so
-/// neither tab's internals needed restructuring to gain a bottom nav.
+/// LibraryScreen ("My Library") and ShopScreen ("Store") — My Library
+/// first (leftmost tab, and the one that opens by default): it's where
+/// the actual reading happens, the app's core loop, so it gets priority
+/// over browsing the Store. Each tab keeps its own Scaffold/AppBar
+/// (nested Scaffolds are a normal, supported Flutter pattern) rather
+/// than this screen owning one shared AppBar, so neither tab's
+/// internals needed restructuring to gain a bottom nav.
 ///
 /// Uses IndexedStack, not a plain switch on the selected index — a
 /// switch would tear down and rebuild the non-selected tab's State
@@ -56,7 +58,6 @@ class _HomeScreenState extends State<HomeScreen> {
       body: IndexedStack(
         index: _selectedIndex,
         children: [
-          ShopScreen(repository: widget.repository),
           LibraryScreen(
             repository: widget.repository,
             progressStore: widget.progressStore,
@@ -64,6 +65,7 @@ class _HomeScreenState extends State<HomeScreen> {
             settingsStore: widget.settingsStore,
             onThemeModeChanged: widget.onThemeModeChanged,
           ),
+          ShopScreen(repository: widget.repository),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -71,11 +73,11 @@ class _HomeScreenState extends State<HomeScreen> {
         onDestinationSelected: (index) =>
             setState(() => _selectedIndex = index),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.storefront), label: 'Store'),
           NavigationDestination(
             icon: Icon(Icons.library_books),
             label: 'My Library',
           ),
+          NavigationDestination(icon: Icon(Icons.storefront), label: 'Store'),
         ],
       ),
     );
