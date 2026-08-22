@@ -27,6 +27,10 @@ See [AIDOKU_DESIGN.md](./AIDOKU_DESIGN.md) for the full design plan.
 ![Aidoku 06](docs/images/Aidoku_06.png)
 **Review Screen**
 ![Aidoku 08](docs/images/Aidoku_08.png)
+**Store Screen**
+![Aidoku 09](docs/images/Aidoku_09.png)
+**Store Book Detail View**
+![Aidoku 10](docs/images/Aidoku_10.png)
 
 (Screenshots taken on 15/08/2026)
 
